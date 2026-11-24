@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <style name="Theme.JKMediaPlayer" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">false</item>
+    </style>
+
+    <!-- Unified Smart Splash Screen for Music Launcher -->
+    <style name="Theme.JKMediaPlayer.MusicLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/music_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_music_splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.JKMediaPlayer</item>
+    </style>
+
+    <!-- Unified Smart Splash Screen for Video Launcher -->
+    <style name="Theme.JKMediaPlayer.VideoLaunch" parent="Theme.SplashScreen">
+        <item name="windowSplashScreenBackground">@color/video_splash_background</item>
+        <item name="windowSplashScreenAnimatedIcon">@drawable/ic_launcher_video_splash</item>
+        <item name="postSplashScreenTheme">@style/Theme.JKMediaPlayer</item>
+    </style>
+
+    <style name="Theme.JKMediaPlayer.Fullscreen" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+        <item name="android:windowContentOverlay">@null</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+    </style>
+</resources>

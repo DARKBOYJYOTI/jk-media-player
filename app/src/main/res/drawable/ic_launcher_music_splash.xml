@@ -1,0 +1,33 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+
+    <!-- Perfectly Rounded Circle Candy Crimson Red Emblem (diameter 60dp, fits 100% inside Android 12 & MIUI safe crop area) -->
+    <path
+        android:fillColor="#FA2D48"
+        android:pathData="M 54,24 C 70.6,24 84,37.4 84,54 C 84,70.6 70.6,84 54,84 C 37.4,84 24,70.6 24,54 C 24,37.4 37.4,24 54,24 Z" />
+
+    <!-- Ambient drop shadow for dimensional depth -->
+    <group
+        android:scaleX="1.7"
+        android:scaleY="1.7"
+        android:translateX="34.8"
+        android:translateY="34.4">
+        <path
+            android:fillColor="#26000000"
+            android:pathData="M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z" />
+    </group>
+
+    <!-- Pure Solid White Single MusicNote matching the new app icon and header emblem -->
+    <group
+        android:scaleX="1.7"
+        android:scaleY="1.7"
+        android:translateX="34.2"
+        android:translateY="33.6">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z" />
+    </group>
+</vector>

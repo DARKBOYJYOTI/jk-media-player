@@ -1,0 +1,986 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="UnusedAttribute,LockedOrientationActivity">
+
+    <!-- Storage Permissions for Android 5 to 17 -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" tools:ignore="ScopedStorage" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
+    <uses-permission android:name="android.permission.READ_MEDIA_AUDIO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
+
+    <!-- Playback, Service, and System Permissions -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+
+    <!-- Package visibility for Android 11+ to query and launch external Equalizer panels -->
+    <queries>
+        <intent>
+            <action android:name="android.media.action.DISPLAY_AUDIO_EFFECT_CONTROL_PANEL" />
+        </intent>
+        <intent>
+            <action android:name="android.media.action.OPEN_AUDIO_EFFECT_CONTROL_SESSION" />
+        </intent>
+    </queries>
+
+    <application
+        tools:ignore="UnusedAttribute,LockedOrientationActivity"
+        android:name=".JKApplication"
+        android:allowBackup="true"
+        android:appCategory="audio"
+        android:icon="@mipmap/ic_launcher_media"
+        android:label="@string/app_name"
+        android:roundIcon="@mipmap/ic_launcher_media_round"
+        android:supportsRtl="true"
+        android:theme="@style/Theme.JKMediaPlayer"
+        android:usesCleartextTraffic="true"
+        android:requestLegacyExternalStorage="true">
+
+        <!-- Support full screen across camera notch / cutout on MIUI / HyperOS / Xiaomi / Poco devices -->
+        <meta-data android:name="notch.config" android:value="portrait|landscape"/>
+
+        <!-- 1. Dedicated Music Activity & Launcher -->
+        <activity
+            android:name=".ui.MainActivity"
+            android:theme="@style/Theme.JKMediaPlayer.MusicLaunch"
+            android:exported="true"
+            android:label="@string/launcher_music_label"
+            android:icon="@mipmap/ic_launcher_music"
+            android:roundIcon="@mipmap/ic_launcher_music_round"
+            android:taskAffinity="com.jk.mediaplayer.music"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
+            android:windowSoftInputMode="adjustResize">
+            <!-- 1. Audio MIME types across storage schemes -->
+            <intent-filter android:label="@string/launcher_music_label" android:icon="@drawable/ic_launcher_music_round">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="application/x-ogg" />
+                <data android:mimeType="application/x-flac" />
+                <data android:mimeType="application/flac" />
+            </intent-filter>
+
+                        <!-- 2. Audio MIME types across network schemes -->
+            <intent-filter android:label="@string/launcher_music_label" android:icon="@drawable/ic_launcher_music_round">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="*" />
+                <data android:scheme="rtsp" />
+                <data android:scheme="rtmp" />
+                <data android:scheme="mms" />
+                <data android:scheme="ftp" />
+                <data android:scheme="udp" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/ogg" />
+                <data android:mimeType="application/x-ogg" />
+                <data android:mimeType="application/x-flac" />
+                <data android:mimeType="application/flac" />
+                <data android:mimeType="audio/mpegurl" />
+                <data android:mimeType="audio/x-mpegurl" />
+            </intent-filter>
+
+            <!-- 3. Network audio URLs matching file extensions (no MIME type specified) -->
+            <intent-filter android:label="@string/launcher_music_label" android:icon="@drawable/ic_launcher_music_round">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="*" />
+                <data android:scheme="ftp" />
+                <data android:host="*" />
+                <!-- Modern Android pathSuffix: matches any path depth and any number of dots -->
+                <data android:pathSuffix=".mp3" />
+                <data android:pathSuffix=".flac" />
+                <data android:pathSuffix=".aac" />
+                <data android:pathSuffix=".m4a" />
+                <data android:pathSuffix=".ogg" />
+                <data android:pathSuffix=".opus" />
+                <data android:pathSuffix=".wav" />
+                <data android:pathSuffix=".wma" />
+                <data android:pathSuffix=".alac" />
+                <data android:pathSuffix=".ape" />
+                <data android:pathSuffix=".mka" />
+                <data android:pathSuffix=".dts" />
+                <data android:pathSuffix=".ac3" />
+                <data android:pathSuffix=".mid" />
+                <data android:pathSuffix=".midi" />
+                <data android:pathSuffix=".amr" />
+                <data android:pathSuffix=".MP3" />
+                <data android:pathSuffix=".FLAC" />
+                <data android:pathSuffix=".AAC" />
+                <data android:pathSuffix=".M4A" />
+                <data android:pathSuffix=".OGG" />
+                <data android:pathSuffix=".OPUS" />
+                <data android:pathSuffix=".WAV" />
+                <data android:pathSuffix=".WMA" />
+                <data android:pathSuffix=".ALAC" />
+                <data android:pathSuffix=".APE" />
+                <data android:pathSuffix=".MKA" />
+                <data android:pathSuffix=".DTS" />
+                <data android:pathSuffix=".AC3" />
+                <data android:pathSuffix=".MID" />
+                <data android:pathSuffix=".MIDI" />
+                <data android:pathSuffix=".AMR" />
+                <!-- Legacy multi-dot pathPattern fallbacks -->
+                <data android:pathPattern=".*\\.mp3" />
+                <data android:pathPattern=".*\\.*\\.mp3" />
+                <data android:pathPattern=".*\\.*\\.*\\.mp3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.mp3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.mp3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.mp3" />
+                <data android:pathPattern=".*\\.flac" />
+                <data android:pathPattern=".*\\.*\\.flac" />
+                <data android:pathPattern=".*\\.*\\.*\\.flac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.flac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.flac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.flac" />
+                <data android:pathPattern=".*\\.aac" />
+                <data android:pathPattern=".*\\.*\\.aac" />
+                <data android:pathPattern=".*\\.*\\.*\\.aac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.aac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.aac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.aac" />
+                <data android:pathPattern=".*\\.m4a" />
+                <data android:pathPattern=".*\\.*\\.m4a" />
+                <data android:pathPattern=".*\\.*\\.*\\.m4a" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.m4a" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.m4a" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.m4a" />
+                <data android:pathPattern=".*\\.ogg" />
+                <data android:pathPattern=".*\\.*\\.ogg" />
+                <data android:pathPattern=".*\\.*\\.*\\.ogg" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.ogg" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.ogg" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.ogg" />
+                <data android:pathPattern=".*\\.opus" />
+                <data android:pathPattern=".*\\.*\\.opus" />
+                <data android:pathPattern=".*\\.*\\.*\\.opus" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.opus" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.opus" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.opus" />
+                <data android:pathPattern=".*\\.wav" />
+                <data android:pathPattern=".*\\.*\\.wav" />
+                <data android:pathPattern=".*\\.*\\.*\\.wav" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.wav" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.wav" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.wav" />
+                <data android:pathPattern=".*\\.wma" />
+                <data android:pathPattern=".*\\.*\\.wma" />
+                <data android:pathPattern=".*\\.*\\.*\\.wma" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.wma" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.wma" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.wma" />
+                <data android:pathPattern=".*\\.MP3" />
+                <data android:pathPattern=".*\\.*\\.MP3" />
+                <data android:pathPattern=".*\\.*\\.*\\.MP3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.MP3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.MP3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.MP3" />
+                <data android:pathPattern=".*\\.FLAC" />
+                <data android:pathPattern=".*\\.*\\.FLAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.FLAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.FLAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.FLAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.FLAC" />
+                <data android:pathPattern=".*\\.AAC" />
+                <data android:pathPattern=".*\\.*\\.AAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.AAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.AAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.AAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.AAC" />
+                <data android:pathPattern=".*\\.M4A" />
+                <data android:pathPattern=".*\\.*\\.M4A" />
+                <data android:pathPattern=".*\\.*\\.*\\.M4A" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.M4A" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.M4A" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.M4A" />
+                <data android:pathPattern=".*\\.OGG" />
+                <data android:pathPattern=".*\\.*\\.OGG" />
+                <data android:pathPattern=".*\\.*\\.*\\.OGG" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.OGG" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.OGG" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.OGG" />
+                <data android:pathPattern=".*\\.OPUS" />
+                <data android:pathPattern=".*\\.*\\.OPUS" />
+                <data android:pathPattern=".*\\.*\\.*\\.OPUS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.OPUS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.OPUS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.OPUS" />
+                <data android:pathPattern=".*\\.WAV" />
+                <data android:pathPattern=".*\\.*\\.WAV" />
+                <data android:pathPattern=".*\\.*\\.*\\.WAV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.WAV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.WAV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.WAV" />
+                <data android:pathPattern=".*\\.WMA" />
+                <data android:pathPattern=".*\\.*\\.WMA" />
+                <data android:pathPattern=".*\\.*\\.*\\.WMA" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.WMA" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.WMA" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.WMA" />
+            </intent-filter>
+
+            <!-- 3b. Network audio URLs matching file extensions with MIME types (Firefox external download handoff, browsers, download managers) -->
+            <intent-filter android:label="@string/launcher_music_label" android:icon="@drawable/ic_launcher_music_round">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="*" />
+                <data android:scheme="ftp" />
+                <data android:host="*" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="application/*" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/x-download" />
+                <data android:mimeType="binary/octet-stream" />
+                <data android:mimeType="application/force-download" />
+                <data android:mimeType="application/download" />
+                <data android:mimeType="*/*" />
+                <!-- Modern Android pathSuffix: matches any path depth and any number of dots -->
+                <data android:pathSuffix=".mp3" />
+                <data android:pathSuffix=".flac" />
+                <data android:pathSuffix=".aac" />
+                <data android:pathSuffix=".m4a" />
+                <data android:pathSuffix=".ogg" />
+                <data android:pathSuffix=".opus" />
+                <data android:pathSuffix=".wav" />
+                <data android:pathSuffix=".wma" />
+                <data android:pathSuffix=".alac" />
+                <data android:pathSuffix=".ape" />
+                <data android:pathSuffix=".mka" />
+                <data android:pathSuffix=".dts" />
+                <data android:pathSuffix=".ac3" />
+                <data android:pathSuffix=".mid" />
+                <data android:pathSuffix=".midi" />
+                <data android:pathSuffix=".amr" />
+                <data android:pathSuffix=".MP3" />
+                <data android:pathSuffix=".FLAC" />
+                <data android:pathSuffix=".AAC" />
+                <data android:pathSuffix=".M4A" />
+                <data android:pathSuffix=".OGG" />
+                <data android:pathSuffix=".OPUS" />
+                <data android:pathSuffix=".WAV" />
+                <data android:pathSuffix=".WMA" />
+                <data android:pathSuffix=".ALAC" />
+                <data android:pathSuffix=".APE" />
+                <data android:pathSuffix=".MKA" />
+                <data android:pathSuffix=".DTS" />
+                <data android:pathSuffix=".AC3" />
+                <data android:pathSuffix=".MID" />
+                <data android:pathSuffix=".MIDI" />
+                <data android:pathSuffix=".AMR" />
+                <!-- Legacy multi-dot pathPattern fallbacks -->
+                <data android:pathPattern=".*\\.mp3" />
+                <data android:pathPattern=".*\\.*\\.mp3" />
+                <data android:pathPattern=".*\\.*\\.*\\.mp3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.mp3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.mp3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.mp3" />
+                <data android:pathPattern=".*\\.flac" />
+                <data android:pathPattern=".*\\.*\\.flac" />
+                <data android:pathPattern=".*\\.*\\.*\\.flac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.flac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.flac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.flac" />
+                <data android:pathPattern=".*\\.aac" />
+                <data android:pathPattern=".*\\.*\\.aac" />
+                <data android:pathPattern=".*\\.*\\.*\\.aac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.aac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.aac" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.aac" />
+                <data android:pathPattern=".*\\.m4a" />
+                <data android:pathPattern=".*\\.*\\.m4a" />
+                <data android:pathPattern=".*\\.*\\.*\\.m4a" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.m4a" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.m4a" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.m4a" />
+                <data android:pathPattern=".*\\.ogg" />
+                <data android:pathPattern=".*\\.*\\.ogg" />
+                <data android:pathPattern=".*\\.*\\.*\\.ogg" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.ogg" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.ogg" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.ogg" />
+                <data android:pathPattern=".*\\.opus" />
+                <data android:pathPattern=".*\\.*\\.opus" />
+                <data android:pathPattern=".*\\.*\\.*\\.opus" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.opus" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.opus" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.opus" />
+                <data android:pathPattern=".*\\.wav" />
+                <data android:pathPattern=".*\\.*\\.wav" />
+                <data android:pathPattern=".*\\.*\\.*\\.wav" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.wav" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.wav" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.wav" />
+                <data android:pathPattern=".*\\.wma" />
+                <data android:pathPattern=".*\\.*\\.wma" />
+                <data android:pathPattern=".*\\.*\\.*\\.wma" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.wma" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.wma" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.wma" />
+                <data android:pathPattern=".*\\.MP3" />
+                <data android:pathPattern=".*\\.*\\.MP3" />
+                <data android:pathPattern=".*\\.*\\.*\\.MP3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.MP3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.MP3" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.MP3" />
+                <data android:pathPattern=".*\\.FLAC" />
+                <data android:pathPattern=".*\\.*\\.FLAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.FLAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.FLAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.FLAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.FLAC" />
+                <data android:pathPattern=".*\\.AAC" />
+                <data android:pathPattern=".*\\.*\\.AAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.AAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.AAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.AAC" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.AAC" />
+                <data android:pathPattern=".*\\.M4A" />
+                <data android:pathPattern=".*\\.*\\.M4A" />
+                <data android:pathPattern=".*\\.*\\.*\\.M4A" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.M4A" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.M4A" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.M4A" />
+                <data android:pathPattern=".*\\.OGG" />
+                <data android:pathPattern=".*\\.*\\.OGG" />
+                <data android:pathPattern=".*\\.*\\.*\\.OGG" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.OGG" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.OGG" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.OGG" />
+                <data android:pathPattern=".*\\.OPUS" />
+                <data android:pathPattern=".*\\.*\\.OPUS" />
+                <data android:pathPattern=".*\\.*\\.*\\.OPUS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.OPUS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.OPUS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.OPUS" />
+                <data android:pathPattern=".*\\.WAV" />
+                <data android:pathPattern=".*\\.*\\.WAV" />
+                <data android:pathPattern=".*\\.*\\.*\\.WAV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.WAV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.WAV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.WAV" />
+                <data android:pathPattern=".*\\.WMA" />
+                <data android:pathPattern=".*\\.*\\.WMA" />
+                <data android:pathPattern=".*\\.*\\.*\\.WMA" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.WMA" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.WMA" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.WMA" />
+            </intent-filter>
+
+<!-- 4. Local storage audio URLs matching file extensions -->
+            <intent-filter android:label="@string/launcher_music_label" android:icon="@drawable/ic_launcher_music_round">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.mp3" />
+                <data android:pathPattern=".*\\..*\\.mp3" />
+                <data android:pathPattern=".*\\.flac" />
+                <data android:pathPattern=".*\\..*\\.flac" />
+                <data android:pathPattern=".*\\.aac" />
+                <data android:pathPattern=".*\\..*\\.aac" />
+                <data android:pathPattern=".*\\.m4a" />
+                <data android:pathPattern=".*\\..*\\.m4a" />
+                <data android:pathPattern=".*\\.ogg" />
+                <data android:pathPattern=".*\\.opus" />
+                <data android:pathPattern=".*\\.wav" />
+                <data android:pathPattern=".*\\.wma" />
+                <data android:pathPattern=".*\\.alac" />
+                <data android:pathPattern=".*\\.ape" />
+            </intent-filter>
+
+            <!-- 4. Default Music Player action for Android OS & external apps -->
+            <intent-filter>
+                <action android:name="android.intent.action.MUSIC_PLAYER" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+            </intent-filter>
+
+            <intent-filter android:label="@string/launcher_music_label" android:icon="@drawable/ic_launcher_music_round">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="audio/*" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <activity-alias
+            android:name=".MusicLauncher"
+            android:targetActivity=".ui.MainActivity"
+            android:exported="true"
+            android:taskAffinity="com.jk.mediaplayer.music"
+            android:launchMode="singleTask"
+            android:icon="@mipmap/ic_launcher_music"
+            android:roundIcon="@mipmap/ic_launcher_music_round"
+            android:label="@string/launcher_music_label">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".MusicLauncher_Music"
+            android:targetActivity=".ui.MainActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:taskAffinity="com.jk.mediaplayer.music"
+            android:launchMode="singleTask"
+            android:icon="@mipmap/ic_launcher_music"
+            android:roundIcon="@mipmap/ic_launcher_music_round"
+            android:label="@string/launcher_music_label_simple">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- 2. Dedicated Video Activity & Launcher -->
+        <activity
+            android:name=".ui.video.VideoActivity"
+            android:theme="@style/Theme.JKMediaPlayer.VideoLaunch"
+            android:exported="true"
+            android:label="@string/launcher_video_label"
+            android:icon="@mipmap/ic_launcher_video"
+            android:roundIcon="@mipmap/ic_launcher_video_round"
+            android:taskAffinity="com.jk.mediaplayer.video"
+            android:launchMode="singleTask"
+            android:screenOrientation="portrait"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
+            android:windowSoftInputMode="adjustResize">
+        </activity>
+
+        <activity-alias
+            android:name=".VideoLauncher"
+            android:targetActivity=".ui.video.VideoActivity"
+            android:exported="true"
+            android:taskAffinity="com.jk.mediaplayer.video"
+            android:launchMode="singleTask"
+            android:icon="@mipmap/ic_launcher_video"
+            android:roundIcon="@mipmap/ic_launcher_video_round"
+            android:label="@string/launcher_video_label">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <activity-alias
+            android:name=".VideoLauncher_Videos"
+            android:targetActivity=".ui.video.VideoActivity"
+            android:exported="true"
+            android:enabled="false"
+            android:taskAffinity="com.jk.mediaplayer.video"
+            android:launchMode="singleTask"
+            android:icon="@mipmap/ic_launcher_video"
+            android:roundIcon="@mipmap/ic_launcher_video_round"
+            android:label="@string/launcher_video_label_simple">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity-alias>
+
+        <!-- Dedicated Fullscreen Gesture Video Player Activity -->
+        <activity
+            android:name=".ui.video.VideoPlayerActivity"
+            android:exported="true"
+            android:supportsPictureInPicture="true"
+            android:label="@string/launcher_video_label"
+            android:icon="@mipmap/ic_launcher_video"
+            android:roundIcon="@mipmap/ic_launcher_video_round"
+            android:taskAffinity="com.jk.mediaplayer.video"
+            android:launchMode="singleTop"
+            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden|smallestScreenSize"
+            android:theme="@style/Theme.JKMediaPlayer.Fullscreen">
+
+            <!-- Xiaomi / MIUI / HyperOS Camera Notch / Cutout Fullscreen Override -->
+            <meta-data android:name="notch.config" android:value="portrait|landscape"/>
+
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <action android:name="com.jk.mediaplayer.action.RESUME_VIDEO_PLAYER" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+            <!-- 1. Video MIME types across local storage schemes -->
+            <intent-filter android:label="@string/launcher_video_label" android:icon="@drawable/ic_launcher_video_round">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="application/x-mpegurl" />
+                <data android:mimeType="application/vnd.apple.mpegurl" />
+                <data android:mimeType="application/dash+xml" />
+                <data android:mimeType="application/mp4" />
+                <data android:mimeType="application/mkv" />
+                <data android:mimeType="application/x-matroska" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+
+                        <!-- 2. Video MIME types across network schemes -->
+            <intent-filter android:label="@string/launcher_video_label" android:icon="@drawable/ic_launcher_video_round">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="*" />
+                <data android:scheme="rtsp" />
+                <data android:scheme="rtmp" />
+                <data android:scheme="mms" />
+                <data android:scheme="ftp" />
+                <data android:scheme="udp" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="application/x-mpegurl" />
+                <data android:mimeType="application/vnd.apple.mpegurl" />
+                <data android:mimeType="application/dash+xml" />
+                <data android:mimeType="application/mp4" />
+                <data android:mimeType="application/mkv" />
+                <data android:mimeType="application/x-matroska" />
+                <data android:mimeType="application/webm" />
+                <data android:mimeType="application/sdp" />
+                <data android:mimeType="application/vnd.rn-realmedia" />
+                <data android:mimeType="application/vnd.rn-realmedia-vbr" />
+                <data android:mimeType="application/mpegurl" />
+                <data android:mimeType="application/x-mpegurl" />
+            </intent-filter>
+
+            <!-- 3. Network video URLs matching file extensions (no MIME type specified) -->
+            <intent-filter android:label="@string/launcher_video_label" android:icon="@drawable/ic_launcher_video_round">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="*" />
+                <data android:scheme="ftp" />
+                <data android:host="*" />
+                <!-- Modern Android pathSuffix: matches any path depth and any number of dots -->
+                <data android:pathSuffix=".mp4" />
+                <data android:pathSuffix=".mkv" />
+                <data android:pathSuffix=".webm" />
+                <data android:pathSuffix=".avi" />
+                <data android:pathSuffix=".mov" />
+                <data android:pathSuffix=".3gp" />
+                <data android:pathSuffix=".ts" />
+                <data android:pathSuffix=".flv" />
+                <data android:pathSuffix=".m3u8" />
+                <data android:pathSuffix=".wmv" />
+                <data android:pathSuffix=".m4v" />
+                <data android:pathSuffix=".vob" />
+                <data android:pathSuffix=".mpg" />
+                <data android:pathSuffix=".mpeg" />
+                <data android:pathSuffix=".m2ts" />
+                <data android:pathSuffix=".mts" />
+                <data android:pathSuffix=".asf" />
+                <data android:pathSuffix=".divx" />
+                <data android:pathSuffix=".f4v" />
+                <data android:pathSuffix=".rm" />
+                <data android:pathSuffix=".rmvb" />
+                <data android:pathSuffix=".MP4" />
+                <data android:pathSuffix=".MKV" />
+                <data android:pathSuffix=".WEBM" />
+                <data android:pathSuffix=".AVI" />
+                <data android:pathSuffix=".MOV" />
+                <data android:pathSuffix=".3GP" />
+                <data android:pathSuffix=".TS" />
+                <data android:pathSuffix=".FLV" />
+                <data android:pathSuffix=".M3U8" />
+                <data android:pathSuffix=".WMV" />
+                <data android:pathSuffix=".M4V" />
+                <data android:pathSuffix=".VOB" />
+                <data android:pathSuffix=".MPG" />
+                <data android:pathSuffix=".MPEG" />
+                <data android:pathSuffix=".M2TS" />
+                <data android:pathSuffix=".MTS" />
+                <data android:pathSuffix=".ASF" />
+                <data android:pathSuffix=".DIVX" />
+                <data android:pathSuffix=".F4V" />
+                <data android:pathSuffix=".RM" />
+                <data android:pathSuffix=".RMVB" />
+                <!-- Legacy multi-dot pathPattern fallbacks -->
+                <data android:pathPattern=".*\\.mp4" />
+                <data android:pathPattern=".*\\.*\\.mp4" />
+                <data android:pathPattern=".*\\.*\\.*\\.mp4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.mp4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.mp4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.mp4" />
+                <data android:pathPattern=".*\\.mkv" />
+                <data android:pathPattern=".*\\.*\\.mkv" />
+                <data android:pathPattern=".*\\.*\\.*\\.mkv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.mkv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.mkv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.mkv" />
+                <data android:pathPattern=".*\\.webm" />
+                <data android:pathPattern=".*\\.*\\.webm" />
+                <data android:pathPattern=".*\\.*\\.*\\.webm" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.webm" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.webm" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.webm" />
+                <data android:pathPattern=".*\\.avi" />
+                <data android:pathPattern=".*\\.*\\.avi" />
+                <data android:pathPattern=".*\\.*\\.*\\.avi" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.avi" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.avi" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.avi" />
+                <data android:pathPattern=".*\\.mov" />
+                <data android:pathPattern=".*\\.*\\.mov" />
+                <data android:pathPattern=".*\\.*\\.*\\.mov" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.mov" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.mov" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.mov" />
+                <data android:pathPattern=".*\\.3gp" />
+                <data android:pathPattern=".*\\.*\\.3gp" />
+                <data android:pathPattern=".*\\.*\\.*\\.3gp" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.3gp" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.3gp" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.3gp" />
+                <data android:pathPattern=".*\\.ts" />
+                <data android:pathPattern=".*\\.*\\.ts" />
+                <data android:pathPattern=".*\\.*\\.*\\.ts" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.ts" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.ts" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.ts" />
+                <data android:pathPattern=".*\\.flv" />
+                <data android:pathPattern=".*\\.*\\.flv" />
+                <data android:pathPattern=".*\\.*\\.*\\.flv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.flv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.flv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.flv" />
+                <data android:pathPattern=".*\\.m3u8" />
+                <data android:pathPattern=".*\\.*\\.m3u8" />
+                <data android:pathPattern=".*\\.*\\.*\\.m3u8" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.m3u8" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.m3u8" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.m3u8" />
+                <data android:pathPattern=".*\\.wmv" />
+                <data android:pathPattern=".*\\.*\\.wmv" />
+                <data android:pathPattern=".*\\.*\\.*\\.wmv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.wmv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.wmv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.wmv" />
+                <data android:pathPattern=".*\\.m4v" />
+                <data android:pathPattern=".*\\.*\\.m4v" />
+                <data android:pathPattern=".*\\.*\\.*\\.m4v" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.m4v" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.m4v" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.m4v" />
+                <data android:pathPattern=".*\\.MP4" />
+                <data android:pathPattern=".*\\.*\\.MP4" />
+                <data android:pathPattern=".*\\.*\\.*\\.MP4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.MP4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.MP4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.MP4" />
+                <data android:pathPattern=".*\\.MKV" />
+                <data android:pathPattern=".*\\.*\\.MKV" />
+                <data android:pathPattern=".*\\.*\\.*\\.MKV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.MKV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.MKV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.MKV" />
+                <data android:pathPattern=".*\\.WEBM" />
+                <data android:pathPattern=".*\\.*\\.WEBM" />
+                <data android:pathPattern=".*\\.*\\.*\\.WEBM" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.WEBM" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.WEBM" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.WEBM" />
+                <data android:pathPattern=".*\\.AVI" />
+                <data android:pathPattern=".*\\.*\\.AVI" />
+                <data android:pathPattern=".*\\.*\\.*\\.AVI" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.AVI" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.AVI" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.AVI" />
+                <data android:pathPattern=".*\\.MOV" />
+                <data android:pathPattern=".*\\.*\\.MOV" />
+                <data android:pathPattern=".*\\.*\\.*\\.MOV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.MOV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.MOV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.MOV" />
+                <data android:pathPattern=".*\\.3GP" />
+                <data android:pathPattern=".*\\.*\\.3GP" />
+                <data android:pathPattern=".*\\.*\\.*\\.3GP" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.3GP" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.3GP" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.3GP" />
+                <data android:pathPattern=".*\\.TS" />
+                <data android:pathPattern=".*\\.*\\.TS" />
+                <data android:pathPattern=".*\\.*\\.*\\.TS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.TS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.TS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.TS" />
+                <data android:pathPattern=".*\\.FLV" />
+                <data android:pathPattern=".*\\.*\\.FLV" />
+                <data android:pathPattern=".*\\.*\\.*\\.FLV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.FLV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.FLV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.FLV" />
+            </intent-filter>
+
+            <!-- 3b. Network video URLs matching file extensions with MIME types (Firefox external download handoff, browsers, download managers) -->
+            <intent-filter android:label="@string/launcher_video_label" android:icon="@drawable/ic_launcher_video_round">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="http" />
+                <data android:scheme="https" />
+                <data android:host="*" />
+                <data android:scheme="ftp" />
+                <data android:host="*" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="application/*" />
+                <data android:mimeType="application/octet-stream" />
+                <data android:mimeType="application/x-download" />
+                <data android:mimeType="binary/octet-stream" />
+                <data android:mimeType="application/force-download" />
+                <data android:mimeType="application/download" />
+                <data android:mimeType="*/*" />
+                <!-- Modern Android pathSuffix: matches any path depth and any number of dots -->
+                <data android:pathSuffix=".mp4" />
+                <data android:pathSuffix=".mkv" />
+                <data android:pathSuffix=".webm" />
+                <data android:pathSuffix=".avi" />
+                <data android:pathSuffix=".mov" />
+                <data android:pathSuffix=".3gp" />
+                <data android:pathSuffix=".ts" />
+                <data android:pathSuffix=".flv" />
+                <data android:pathSuffix=".m3u8" />
+                <data android:pathSuffix=".wmv" />
+                <data android:pathSuffix=".m4v" />
+                <data android:pathSuffix=".vob" />
+                <data android:pathSuffix=".mpg" />
+                <data android:pathSuffix=".mpeg" />
+                <data android:pathSuffix=".m2ts" />
+                <data android:pathSuffix=".mts" />
+                <data android:pathSuffix=".asf" />
+                <data android:pathSuffix=".divx" />
+                <data android:pathSuffix=".f4v" />
+                <data android:pathSuffix=".rm" />
+                <data android:pathSuffix=".rmvb" />
+                <data android:pathSuffix=".MP4" />
+                <data android:pathSuffix=".MKV" />
+                <data android:pathSuffix=".WEBM" />
+                <data android:pathSuffix=".AVI" />
+                <data android:pathSuffix=".MOV" />
+                <data android:pathSuffix=".3GP" />
+                <data android:pathSuffix=".TS" />
+                <data android:pathSuffix=".FLV" />
+                <data android:pathSuffix=".M3U8" />
+                <data android:pathSuffix=".WMV" />
+                <data android:pathSuffix=".M4V" />
+                <data android:pathSuffix=".VOB" />
+                <data android:pathSuffix=".MPG" />
+                <data android:pathSuffix=".MPEG" />
+                <data android:pathSuffix=".M2TS" />
+                <data android:pathSuffix=".MTS" />
+                <data android:pathSuffix=".ASF" />
+                <data android:pathSuffix=".DIVX" />
+                <data android:pathSuffix=".F4V" />
+                <data android:pathSuffix=".RM" />
+                <data android:pathSuffix=".RMVB" />
+                <!-- Legacy multi-dot pathPattern fallbacks -->
+                <data android:pathPattern=".*\\.mp4" />
+                <data android:pathPattern=".*\\.*\\.mp4" />
+                <data android:pathPattern=".*\\.*\\.*\\.mp4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.mp4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.mp4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.mp4" />
+                <data android:pathPattern=".*\\.mkv" />
+                <data android:pathPattern=".*\\.*\\.mkv" />
+                <data android:pathPattern=".*\\.*\\.*\\.mkv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.mkv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.mkv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.mkv" />
+                <data android:pathPattern=".*\\.webm" />
+                <data android:pathPattern=".*\\.*\\.webm" />
+                <data android:pathPattern=".*\\.*\\.*\\.webm" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.webm" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.webm" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.webm" />
+                <data android:pathPattern=".*\\.avi" />
+                <data android:pathPattern=".*\\.*\\.avi" />
+                <data android:pathPattern=".*\\.*\\.*\\.avi" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.avi" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.avi" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.avi" />
+                <data android:pathPattern=".*\\.mov" />
+                <data android:pathPattern=".*\\.*\\.mov" />
+                <data android:pathPattern=".*\\.*\\.*\\.mov" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.mov" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.mov" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.mov" />
+                <data android:pathPattern=".*\\.3gp" />
+                <data android:pathPattern=".*\\.*\\.3gp" />
+                <data android:pathPattern=".*\\.*\\.*\\.3gp" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.3gp" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.3gp" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.3gp" />
+                <data android:pathPattern=".*\\.ts" />
+                <data android:pathPattern=".*\\.*\\.ts" />
+                <data android:pathPattern=".*\\.*\\.*\\.ts" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.ts" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.ts" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.ts" />
+                <data android:pathPattern=".*\\.flv" />
+                <data android:pathPattern=".*\\.*\\.flv" />
+                <data android:pathPattern=".*\\.*\\.*\\.flv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.flv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.flv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.flv" />
+                <data android:pathPattern=".*\\.m3u8" />
+                <data android:pathPattern=".*\\.*\\.m3u8" />
+                <data android:pathPattern=".*\\.*\\.*\\.m3u8" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.m3u8" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.m3u8" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.m3u8" />
+                <data android:pathPattern=".*\\.wmv" />
+                <data android:pathPattern=".*\\.*\\.wmv" />
+                <data android:pathPattern=".*\\.*\\.*\\.wmv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.wmv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.wmv" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.wmv" />
+                <data android:pathPattern=".*\\.m4v" />
+                <data android:pathPattern=".*\\.*\\.m4v" />
+                <data android:pathPattern=".*\\.*\\.*\\.m4v" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.m4v" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.m4v" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.m4v" />
+                <data android:pathPattern=".*\\.MP4" />
+                <data android:pathPattern=".*\\.*\\.MP4" />
+                <data android:pathPattern=".*\\.*\\.*\\.MP4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.MP4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.MP4" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.MP4" />
+                <data android:pathPattern=".*\\.MKV" />
+                <data android:pathPattern=".*\\.*\\.MKV" />
+                <data android:pathPattern=".*\\.*\\.*\\.MKV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.MKV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.MKV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.MKV" />
+                <data android:pathPattern=".*\\.WEBM" />
+                <data android:pathPattern=".*\\.*\\.WEBM" />
+                <data android:pathPattern=".*\\.*\\.*\\.WEBM" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.WEBM" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.WEBM" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.WEBM" />
+                <data android:pathPattern=".*\\.AVI" />
+                <data android:pathPattern=".*\\.*\\.AVI" />
+                <data android:pathPattern=".*\\.*\\.*\\.AVI" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.AVI" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.AVI" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.AVI" />
+                <data android:pathPattern=".*\\.MOV" />
+                <data android:pathPattern=".*\\.*\\.MOV" />
+                <data android:pathPattern=".*\\.*\\.*\\.MOV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.MOV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.MOV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.MOV" />
+                <data android:pathPattern=".*\\.3GP" />
+                <data android:pathPattern=".*\\.*\\.3GP" />
+                <data android:pathPattern=".*\\.*\\.*\\.3GP" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.3GP" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.3GP" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.3GP" />
+                <data android:pathPattern=".*\\.TS" />
+                <data android:pathPattern=".*\\.*\\.TS" />
+                <data android:pathPattern=".*\\.*\\.*\\.TS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.TS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.TS" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.TS" />
+                <data android:pathPattern=".*\\.FLV" />
+                <data android:pathPattern=".*\\.*\\.FLV" />
+                <data android:pathPattern=".*\\.*\\.*\\.FLV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.FLV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.FLV" />
+                <data android:pathPattern=".*\\.*\\.*\\.*\\.*\\.*\\.FLV" />
+            </intent-filter>
+
+<!-- 4. Local storage video URLs matching file extensions -->
+            <intent-filter android:label="@string/launcher_video_label" android:icon="@drawable/ic_launcher_video_round">
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:pathPattern=".*\\.mp4" />
+                <data android:pathPattern=".*\\..*\\.mp4" />
+                <data android:pathPattern=".*\\.mkv" />
+                <data android:pathPattern=".*\\..*\\.mkv" />
+                <data android:pathPattern=".*\\.webm" />
+                <data android:pathPattern=".*\\.avi" />
+                <data android:pathPattern=".*\\.mov" />
+                <data android:pathPattern=".*\\.3gp" />
+                <data android:pathPattern=".*\\.ts" />
+                <data android:pathPattern=".*\\.flv" />
+                <data android:pathPattern=".*\\.m3u8" />
+                <data android:pathPattern=".*\\.wmv" />
+                <data android:pathPattern=".*\\.m4v" />
+                <data android:pathPattern=".*\\.vob" />
+            </intent-filter>
+
+            <intent-filter android:label="@string/launcher_video_label" android:icon="@drawable/ic_launcher_video_round">
+                <action android:name="android.intent.action.SEND" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="video/*" />
+                <data android:mimeType="text/plain" />
+            </intent-filter>
+        </activity>
+
+        <!-- High-Performance Background Download Service -->
+        <service
+            android:name=".service.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
+
+        <!-- Background Audio Playback Service -->
+        <service
+            android:name=".service.AudioPlayerService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+        <!-- Forwards hardware media buttons to the MediaSession on OEM ROMs that request it. -->
+        <receiver
+            android:name="androidx.media.session.MediaButtonReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </receiver>
+
+        <!-- Dedicated Video Background Audio Service -->
+        <service
+            android:name=".service.VideoBackgroundService"
+            android:exported="false"
+            android:foregroundServiceType="mediaPlayback" />
+
+    </application>
+
+</manifest>

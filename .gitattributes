@@ -1,0 +1,26 @@
+# Normalise line endings so the checked-in sources build the same on Windows, macOS and CI.
+* text=auto
+
+*.kt text
+*.kts text
+*.java text
+*.xml text
+*.md text
+*.pro text
+*.properties text
+*.yml text
+*.yaml text
+
+# Shell wrappers must stay LF and executable.
+gradlew text eol=lf
+*.sh text eol=lf
+*.bat text eol=crlf
+
+# Binary assets must never be converted.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.ttf binary
+*.otf binary
+*.jar binary

@@ -1,0 +1,7 @@
+<resources>
+    <string name="app_name">JK Media Player</string>
+    <string name="launcher_music_label">JK Music</string>
+    <string name="launcher_music_label_simple">Music</string>
+    <string name="launcher_video_label">JK Videos</string>
+    <string name="launcher_video_label_simple">Videos</string>
+</resources>

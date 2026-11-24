@@ -1,0 +1,44 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Circular Diagonal Half-and-Half Emblem (Full Bleed) -->
+    <path
+        android:pathData="M 54,54 m -50,0 a 50,50 0 1,0 100,0 a 50,50 0 1,0 -100,0">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:startX="4"
+                android:startY="4"
+                android:endX="104"
+                android:endY="104"
+                android:type="linear">
+                <!-- Half Candy Crimson Red (#FA2D48 - Music) & Half Royal Indigo (#536DFE - Video) split diagonally -->
+                <item android:offset="0.0" android:color="#FA2D48"/>
+                <item android:offset="0.48" android:color="#FA2D48"/>
+                <item android:offset="0.52" android:color="#536DFE"/>
+                <item android:offset="1.0" android:color="#536DFE"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+
+    <!-- Scaled Central Media Crest (matches launcher icon proportions 1:1) -->
+    <group
+        android:scaleX="1.42"
+        android:scaleY="1.42"
+        android:pivotX="54"
+        android:pivotY="54">
+        <!-- Ambient drop shadow -->
+        <path
+            android:fillColor="#33000000"
+            android:pathData="M 43.5,37.5 C 43.5,35.5 46.0,34.2 47.7,35.2 L 77.7,53.7 C 79.3,54.7 79.3,57.3 77.7,58.3 L 47.7,76.8 C 46.0,77.8 43.5,76.5 43.5,74.5 Z" />
+
+        <!-- Pure white rounded Play Arrow with embedded Music Note cutout -->
+        <path
+            android:fillColor="#FFFFFF"
+            android:fillType="evenOdd"
+            android:pathData="M 42,35.5 C 42,33.5 44.5,32.2 46.2,33.2 L 76.2,51.7 C 77.8,52.7 77.8,55.3 76.2,56.3 L 46.2,74.8 C 44.5,75.8 42,74.5 42,72.5 Z M 54.24,44.96 v 12.87 c -0.72,-0.41 -1.55,-0.67 -2.44,-0.67 c -2.70,0.00 -4.88,2.18 -4.88,4.88 s 2.18,4.88 4.88,4.88 s 4.88,-2.18 4.88,-4.88 V 49.84 h 4.88 V 44.96 h -7.32 z" />
+    </group>
+</vector>

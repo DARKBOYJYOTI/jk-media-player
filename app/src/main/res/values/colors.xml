@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Day / Light White Mode Splash Backgrounds -->
+    <color name="music_splash_background">#FFFFFF</color>
+    <color name="video_splash_background">#FFFFFF</color>
+</resources>

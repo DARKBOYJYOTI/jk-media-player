@@ -1,0 +1,33 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    
+    <!-- Perfectly Rounded Circle Royal Video Indigo Emblem (#536DFE) -->
+    <path
+        android:fillColor="#536DFE"
+        android:pathData="M 54,24 C 70.6,24 84,37.4 84,54 C 84,70.6 70.6,84 54,84 C 37.4,84 24,70.6 24,54 C 24,37.4 37.4,24 54,24 Z" />
+
+    <!-- Ambient drop shadow for depth -->
+    <group
+        android:scaleX="1.8"
+        android:scaleY="1.8"
+        android:translateX="32.3"
+        android:translateY="33.2">
+        <path
+            android:fillColor="#26000000"
+            android:pathData="M8,5v14l11,-7z" />
+    </group>
+
+    <!-- Pure white PlayArrow matching the in-app header emblem & app icon -->
+    <group
+        android:scaleX="1.8"
+        android:scaleY="1.8"
+        android:translateX="31.5"
+        android:translateY="32.4">
+        <path
+            android:fillColor="#FFFFFF"
+            android:pathData="M8,5v14l11,-7z" />
+    </group>
+</vector>

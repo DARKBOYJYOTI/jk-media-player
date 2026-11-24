@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Night / AMOLED Dark Mode Splash Backgrounds -->
+    <color name="music_splash_background">#0F0F0F</color>
+    <color name="video_splash_background">#0A0A10</color>
+</resources>
+
