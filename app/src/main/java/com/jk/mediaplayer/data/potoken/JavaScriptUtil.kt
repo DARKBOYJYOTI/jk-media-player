@@ -1,23 +1,21 @@
 package com.jk.mediaplayer.data.potoken
 
-import com.grack.nanojson.JsonObject
-import com.grack.nanojson.JsonParser
-import com.grack.nanojson.JsonWriter
 import okio.ByteString.Companion.decodeBase64
 import okio.ByteString.Companion.toByteString
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
- * Parses the raw challenge data obtained from the Create endpoint and returns an object that can be
- * embedded in a JavaScript snippet.
+ * Parses the raw challenge data obtained from the Create endpoint and returns an object that can
+ * be embedded in a JavaScript snippet.
  */
 fun parseChallengeData(rawChallengeData: String): String {
-    val scrambled = JsonParser.array().from(rawChallengeData)
+    val scrambled = JSONArray(rawChallengeData)
 
-    val challengeData = if (scrambled.size > 1 && scrambled.isString(1)) {
-        val descrambled = descramble(scrambled.getString(1))
-        JsonParser.array().from(descrambled)
+    val challengeData = if (scrambled.length() > 1 && scrambled.opt(1) is String) {
+        JSONArray(descramble(scrambled.getString(1)))
     } else {
-        scrambled.getArray(0)
+        scrambled.getJSONArray(0)
     }
 
     val messageId = challengeData.getString(0)
@@ -26,31 +24,45 @@ fun parseChallengeData(rawChallengeData: String): String {
     val globalName = challengeData.getString(5)
     val clientExperimentsStateBlob = challengeData.getString(7)
 
-    val privateDoNotAccessOrElseSafeScriptWrappedValue = challengeData.getArray(1, null)?.find { it is String }
-    val privateDoNotAccessOrElseTrustedResourceUrlWrappedValue = challengeData.getArray(2, null)?.find { it is String }
+    val safeScriptValue = firstString(challengeData.optJSONArray(1))
+    val trustedResourceUrl = firstString(challengeData.optJSONArray(2))
 
-    return JsonWriter.string(
-        JsonObject.builder()
-            .value("messageId", messageId)
-            .`object`("interpreterJavascript")
-            .value("privateDoNotAccessOrElseSafeScriptWrappedValue", privateDoNotAccessOrElseSafeScriptWrappedValue)
-            .value("privateDoNotAccessOrElseTrustedResourceUrlWrappedValue", privateDoNotAccessOrElseTrustedResourceUrlWrappedValue)
-            .end()
-            .value("interpreterHash", interpreterHash)
-            .value("program", program)
-            .value("globalName", globalName)
-            .value("clientExperimentsStateBlob", clientExperimentsStateBlob)
-            .done()
-    )
+    val interpreterJavascript = JSONObject()
+        .put(
+            "privateDoNotAccessOrElseSafeScriptWrappedValue",
+            safeScriptValue ?: JSONObject.NULL
+        )
+        .put(
+            "privateDoNotAccessOrElseTrustedResourceUrlWrappedValue",
+            trustedResourceUrl ?: JSONObject.NULL
+        )
+
+    return JSONObject()
+        .put("messageId", messageId)
+        .put("interpreterJavascript", interpreterJavascript)
+        .put("interpreterHash", interpreterHash)
+        .put("program", program)
+        .put("globalName", globalName)
+        .put("clientExperimentsStateBlob", clientExperimentsStateBlob)
+        .toString()
+}
+
+private fun firstString(array: JSONArray?): String? {
+    if (array == null) return null
+    for (i in 0 until array.length()) {
+        val value = array.opt(i)
+        if (value is String) return value
+    }
+    return null
 }
 
 /**
  * Parses the raw integrity token data obtained from the GenerateIT endpoint to a JavaScript
- * `Uint8Array` that can be embedded directly in JavaScript code, and an [Int] representing the
+ * `Uint8Array` that can be embedded directly in JavaScript code, and a [Long] representing the
  * duration of this token in seconds.
  */
 fun parseIntegrityTokenData(rawIntegrityTokenData: String): Pair<String, Long> {
-    val integrityTokenData = JsonParser.array().from(rawIntegrityTokenData)
+    val integrityTokenData = JSONArray(rawIntegrityTokenData)
     return base64ToU8(integrityTokenData.getString(0)) to integrityTokenData.getLong(1)
 }
 

@@ -87,6 +87,7 @@ android {
     }
     buildFeatures {
         compose = true
+        buildConfig = true
     }
     testOptions {
         // Android framework stubs return default values in plain JVM tests, so pure mapping
