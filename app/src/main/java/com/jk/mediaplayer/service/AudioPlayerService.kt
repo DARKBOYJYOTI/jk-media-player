@@ -34,6 +34,7 @@ import com.jk.mediaplayer.player.AudioSession
 import com.jk.mediaplayer.player.LibVlcController
 import com.jk.mediaplayer.player.AudioEngine
 import com.jk.mediaplayer.player.ExoAudioEngine
+import com.jk.mediaplayer.player.LibVlcAudioEngine
 import com.jk.mediaplayer.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -58,6 +59,7 @@ class AudioPlayerService : Service() {
         private set
 
     private var exoEngine: ExoAudioEngine? = null
+    private var libVlcEngine: LibVlcAudioEngine? = null
 
     /**
      * Picks the engine for the current track: ExoPlayer for YouTube Music streams, LibVLC for
@@ -67,7 +69,7 @@ class AudioPlayerService : Service() {
         get() = if (YouTubeMusic.videoIdOf(_currentTrack.value?.path.orEmpty()) != null) {
             exoEngine
         } else {
-            playerController
+            libVlcEngine
         }
 
 
@@ -173,6 +175,7 @@ class AudioPlayerService : Service() {
                 }
             }
         }
+        libVlcEngine = LibVlcAudioEngine(playerController!!)
         createNotificationChannel()
         setupMediaSession()
         _favoriteTrackIds.value = prefsManager.getFavorites()

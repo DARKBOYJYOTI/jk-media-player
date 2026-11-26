@@ -39,6 +39,9 @@ interface AudioEngine {
     fun setVolume(volumeLevel: Int)
     fun getVolume(): Int
     fun rampVolume(targetVolume: Int, durationMs: Long = 90L)
+    fun clearError()
+    /** Live playback position, used when a completed track has to be restarted. */
+    fun currentPositionMs(): Long
     fun resetProgress()
     fun release()
 }

@@ -94,7 +94,7 @@ class ExoAudioEngine(context: Context) : AudioEngine {
         }
     }
 
-    private val player = ExoPlayer.Builder(context).build().apply {
+    private val player: ExoPlayer = ExoPlayer.Builder(context).build().apply {
         setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA)
@@ -106,6 +106,12 @@ class ExoAudioEngine(context: Context) : AudioEngine {
     }
 
     override fun hasMedia(): Boolean = mediaLoaded
+
+    override fun clearError() {
+        _encounteredError.value = null
+    }
+
+    override fun currentPositionMs(): Long = _currentTime.value
 
     override fun playMedia(
         path: String,
