@@ -33,4 +33,9 @@
 -keep class com.grack.nanojson.** { *; }
 -dontwarn com.grack.nanojson.**
 -dontwarn org.jsoup.**
+
+# Rhino runs the YouTube signature/`n` deciphering script. R8 must not touch it, or streams
+# come back throttled or fail outright in the minified release build.
+-keep class org.mozilla.javascript.** { *; }
 -dontwarn org.mozilla.javascript.**
+-dontwarn javax.script.**
