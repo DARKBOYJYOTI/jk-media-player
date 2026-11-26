@@ -654,7 +654,7 @@ class AudioPlayerService : Service() {
      * reports Playing. Returns false when the stream stalls or the request became stale.
      */
     private suspend fun awaitPlaybackStart(
-        controller: AudioEngine?,
+        controller: LibVlcController?,
         requestToken: Long
     ): Boolean {
         if (controller == null) return false
