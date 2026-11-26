@@ -108,6 +108,15 @@ class LibVlcController(
     var hasUserSelectedSubtitle: Boolean = false
     var userSelectedSubtitleTrackId: Int = -1
 
+    // --- Temporary pause/resume stall instrumentation (BuildConfig.AUDIO_DIAG only) ---
+    // Declared before init {}: initLibVLC() runs from the init block and needs these values.
+    private val diagEnabled: Boolean = BuildConfig.AUDIO_DIAG
+    private val abConfig: AudioAbConfig =
+        if (diagEnabled && !isVideoFlow) AudioAbConfig.load(context) else AudioAbConfig()
+    private var diagProbeJob: Job? = null
+    private var diagPlayCallMs: Long = 0L
+    private var diagFirstTimeChangedLogged: Boolean = false
+
     init {
         initLibVLC()
     }
@@ -127,15 +136,6 @@ class LibVlcController(
     private var playbackWatchdogJob: kotlinx.coroutines.Job? = null
     private var hasEverPlayed: Boolean = false
     private var playbackStartTimeMs: Long = 0L
-
-    // --- Temporary pause/resume stall instrumentation (BuildConfig.AUDIO_DIAG only) ---
-    private val diagEnabled: Boolean = BuildConfig.AUDIO_DIAG
-    private val abConfig: AudioAbConfig by lazy {
-        if (diagEnabled && !isVideoFlow) AudioAbConfig.load(context) else AudioAbConfig()
-    }
-    private var diagProbeJob: Job? = null
-    private var diagPlayCallMs: Long = 0L
-    private var diagFirstTimeChangedLogged: Boolean = false
 
     private val playerEventListener = MediaPlayer.EventListener { event ->
         // Buffering floods at every percent; log only milestones so the useful events stay readable.
