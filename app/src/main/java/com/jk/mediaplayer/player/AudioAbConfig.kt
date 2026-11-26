@@ -25,15 +25,23 @@ internal data class AudioAbConfig(
     val timeStretch: Boolean = false,
     val fileCachingMs: Int = 400,
     val resumeSeek: Boolean = false,
-    val verbose: Boolean = false
+    val verbose: Boolean = false,
+    val keepWakeLock: Boolean = false
 ) {
     fun summary(): String =
         "aout=$aout timeStretch=$timeStretch fileCaching=$fileCachingMs " +
-            "resumeSeek=$resumeSeek verbose=$verbose"
+            "resumeSeek=$resumeSeek verbose=$verbose keepWakeLock=$keepWakeLock"
 
     companion object {
         fun file(context: Context): File =
             File(context.getExternalFilesDir(null), "audio-ab.txt")
+
+        /** Accepts 1/0, true/false, yes/no and on/off; anything else falls back to the default. */
+        private fun parseFlag(raw: String?, fallback: Boolean): Boolean = when (raw?.trim()?.lowercase()) {
+            "1", "true", "yes", "on" -> true
+            "0", "false", "no", "off" -> false
+            else -> fallback
+        }
 
         fun load(context: Context): AudioAbConfig {
             val defaults = AudioAbConfig()
@@ -51,13 +59,12 @@ internal data class AudioAbConfig(
                 }
                 AudioAbConfig(
                     aout = values["aout"]?.takeIf { it.isNotBlank() } ?: defaults.aout,
-                    timeStretch = values["time_stretch"]?.toBooleanStrictOrNull()
-                        ?: defaults.timeStretch,
+                    timeStretch = parseFlag(values["time_stretch"], defaults.timeStretch),
                     fileCachingMs = values["file_caching"]?.toIntOrNull()
                         ?.takeIf { it in 100..10_000 } ?: defaults.fileCachingMs,
-                    resumeSeek = values["resume_seek"]?.toBooleanStrictOrNull()
-                        ?: defaults.resumeSeek,
-                    verbose = values["verbose"]?.toBooleanStrictOrNull() ?: defaults.verbose
+                    resumeSeek = parseFlag(values["resume_seek"], defaults.resumeSeek),
+                    verbose = parseFlag(values["verbose"], defaults.verbose),
+                    keepWakeLock = parseFlag(values["keep_wake_lock"], defaults.keepWakeLock)
                 )
             } catch (_: Throwable) {
                 defaults

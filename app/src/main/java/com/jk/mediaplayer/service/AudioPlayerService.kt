@@ -33,6 +33,7 @@ import androidx.core.app.NotificationCompat
 import com.jk.mediaplayer.R
 import com.jk.mediaplayer.model.AudioItem
 import com.jk.mediaplayer.player.AudioSession
+import com.jk.mediaplayer.player.AudioAbConfig
 import com.jk.mediaplayer.player.LibVlcController
 import com.jk.mediaplayer.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -170,9 +171,10 @@ class AudioPlayerService : Service() {
                 val diagStartMs = SystemClock.elapsedRealtime()
                 if (isPlaying) {
                     acquireWakeLock()
-                } else {
+                } else if (!(BuildConfig.AUDIO_DIAG && diagAbConfig().keepWakeLock)) {
                     // Pause must drop the wake lock: holding a partial lock while paused drains
-                    // the battery and blocks deep sleep.
+                    // the battery and blocks deep sleep. A measurement build can keep it to test
+                    // whether the resume stall is CPU/media-thread wake-up latency.
                     releaseWakeLock()
                 }
                 updatePlaybackState(isPlaying)
@@ -1052,6 +1054,16 @@ class AudioPlayerService : Service() {
                     "(wasPlaying=$isCurrentlyPlaying)"
             )
         }
+    }
+
+    /** Measurement-only overrides; parsed once per service instance. */
+    private var diagAbConfigCache: AudioAbConfig? = null
+
+    private fun diagAbConfig(): AudioAbConfig {
+        diagAbConfigCache?.let { return it }
+        val loaded = if (BuildConfig.AUDIO_DIAG) AudioAbConfig.load(this) else AudioAbConfig()
+        diagAbConfigCache = loaded
+        return loaded
     }
 
     private fun logAudioState(event: String) {
