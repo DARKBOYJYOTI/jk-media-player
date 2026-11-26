@@ -145,7 +145,7 @@ class AudioPlayerService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        playerController = LibVlcController(this).apply {
+        playerController = LibVlcController(this, enableAudioSession = false).apply {
             onEndReached = {
                 acquireWakeLock()
                 scope.launch(Dispatchers.Main.immediate) {
