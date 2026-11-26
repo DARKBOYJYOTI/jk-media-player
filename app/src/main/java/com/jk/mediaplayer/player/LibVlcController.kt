@@ -116,9 +116,9 @@ class LibVlcController(
     private var pendingPause: Boolean = false
     /** Bumped whenever playback state changes, so a stale pause fade cannot touch new media. */
     private var pauseGeneration: Long = 0L
-    /** Volume fades stay disabled so pause/resume never rewrites the AudioTrack level. */
-    private val musicFadeInMs: Long = 0L
-    private val musicFadeOutMs: Long = 0L
+    /** Music fades in and out softly; video starts and stops instantly. */
+    private val musicFadeInMs: Long = if (isVideoFlow) 0L else 300L
+    private val musicFadeOutMs: Long = if (isVideoFlow) 0L else 220L
     private var targetAudioSessionId: Int = 0
 
     private var bufferingJob: kotlinx.coroutines.Job? = null
@@ -140,7 +140,8 @@ class LibVlcController(
                 _isBuffering.value = false
                 _encounteredError.value = null
                 val currentVol = mediaPlayer?.volume ?: -1
-                if (currentVol >= 0 && currentVol != lastRequestedVolume) {
+                val rampRunning = volumeRampJob?.isActive == true
+                if (!rampRunning && currentVol >= 0 && currentVol != lastRequestedVolume) {
                     // Ignore libVLC's -1 sentinel before the AudioTrack is ready, and do not snap
                     // the level while a start ramp is running; writing volume on the first PCM
                     // frame causes an audible speaker click.
