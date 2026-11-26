@@ -147,6 +147,11 @@ dependencies {
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.27.1")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
 
+    // BotGuard poToken minting inside a WebView, ported from NewPipe (GPLv3)
+    implementation("io.reactivex.rxjava3:rxjava:3.1.10")
+    implementation("io.reactivex.rxjava3:rxandroid:3.0.2")
+    implementation("androidx.webkit:webkit:1.12.1")
+
     testImplementation("junit:junit:4.13.2")
 
     // Debugging

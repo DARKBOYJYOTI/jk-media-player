@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import android.util.Log
 import com.jk.mediaplayer.model.AudioItem
+import com.jk.mediaplayer.data.potoken.PoTokenProviderImpl
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.schabi.newpipe.extractor.NewPipe
@@ -77,6 +78,9 @@ object YouTubeMusic {
                 Localization("en"),
                 ContentCountry("US")
             )
+            // Many videos expose no playable audio without a BotGuard token; the provider mints
+            // one on demand and returns null when the device WebView cannot do it.
+            YoutubeStreamExtractor.setPoTokenProvider(PoTokenProviderImpl)
         } catch (_: Throwable) {
             // Allow a later call to retry instead of leaving the app permanently uninitialised.
             initialized.set(false)

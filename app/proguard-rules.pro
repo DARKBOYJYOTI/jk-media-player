@@ -39,3 +39,12 @@
 -keep class org.mozilla.javascript.** { *; }
 -dontwarn org.mozilla.javascript.**
 -dontwarn javax.script.**
+
+# BotGuard poToken: the WebView calls back into these classes through JavaScript interfaces,
+# so R8 must keep the annotated members and the RxJava plumbing they use.
+-keepclassmembers class * {
+    @android.webkit.JavascriptInterface <methods>;
+}
+-keep class com.jk.mediaplayer.data.potoken.** { *; }
+-keep class io.reactivex.rxjava3.** { *; }
+-dontwarn io.reactivex.rxjava3.**
