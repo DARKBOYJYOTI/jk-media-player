@@ -793,9 +793,12 @@ class LibVlcController(
             }
             player.time = 0L
         }
-        // Music fades in; video keeps its instant start so the first frame is not silent.
+        // Music fades in only when a track truly starts. Resuming from a pause must not fade from
+        // silence: toggling within a few seconds of the start re-created the AudioTrack mid-stream,
+        // which was heard as a click on the speaker.
         val logical = lastRequestedVolume
-        val fadeIn = musicFadeInMs
+        val freshStart = !hasEverPlayed && _currentTime.value < 500L
+        val fadeIn = if (freshStart) musicFadeInMs else 0L
         try { player.volume = if (fadeIn > 0L) 0 else logical } catch (_: Throwable) {}
         player.play()
         if (attachedLayout != null) {
@@ -811,6 +814,18 @@ class LibVlcController(
     fun pause() {
         val player = mediaPlayer ?: return
         if (!player.isPlaying || pendingPause) return
+        // A pause in the first moment of playback skips the fade: the AudioTrack is still settling
+        // and a second volume ramp makes the output restart audibly.
+        val sinceStart = SystemClock.elapsedRealtime() - playbackStartTimeMs
+        if (sinceStart < 600L) {
+            cancelVolumeRamp()
+            pendingPause = false
+            pauseGeneration++
+            try { player.pause() } catch (_: Throwable) {}
+            try { player.volume = lastRequestedVolume } catch (_: Throwable) {}
+            _isPlaying.value = false
+            return
+        }
         cancelVolumeRamp()
         pendingPause = true
         pauseGeneration++
@@ -867,7 +882,8 @@ class LibVlcController(
     /** Fade the current audio out before stopping it, used when a new track takes over. */
     fun stopWithFade() {
         val player = mediaPlayer ?: return
-        if (!player.isPlaying) {
+        // Too early to fade: the output is still settling and a ramp would restart it audibly.
+        if (!player.isPlaying || SystemClock.elapsedRealtime() - playbackStartTimeMs < 600L) {
             stop()
             return
         }
