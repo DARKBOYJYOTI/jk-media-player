@@ -32,6 +32,8 @@ import com.jk.mediaplayer.R
 import com.jk.mediaplayer.model.AudioItem
 import com.jk.mediaplayer.player.AudioSession
 import com.jk.mediaplayer.player.LibVlcController
+import com.jk.mediaplayer.player.AudioEngine
+import com.jk.mediaplayer.player.ExoAudioEngine
 import com.jk.mediaplayer.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -54,6 +56,20 @@ class AudioPlayerService : Service() {
 
     var playerController: LibVlcController? = null
         private set
+
+    private var exoEngine: ExoAudioEngine? = null
+
+    /**
+     * Picks the engine for the current track: ExoPlayer for YouTube Music streams, LibVLC for
+     * everything local. Every playback call in this service goes through this accessor.
+     */
+    private val engine: AudioEngine?
+        get() = if (YouTubeMusic.videoIdOf(_currentTrack.value?.path.orEmpty()) != null) {
+            exoEngine
+        } else {
+            playerController
+        }
+
 
     private var wakeLock: PowerManager.WakeLock? = null
 
@@ -131,7 +147,7 @@ class AudioPlayerService : Service() {
 
     fun clearPlaybackError() {
         _playbackError.value = null
-        playerController?.clearError()
+        engine?.clearError()
     }
 
     inner class LocalBinder : Binder() {
@@ -143,6 +159,7 @@ class AudioPlayerService : Service() {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        ExoAudioEngine(this).also { exoEngine = it }
         playerController = LibVlcController(this).apply {
             onEndReached = {
                 acquireWakeLock()
@@ -162,7 +179,7 @@ class AudioPlayerService : Service() {
         registerBecomingNoisyReceiver()
 
         scope.launch {
-            playerController?.isPlaying?.collect { isPlaying ->
+            engine?.isPlaying?.collect { isPlaying ->
                 if (isPlaying) {
                     acquireWakeLock()
                 } else {
@@ -176,7 +193,7 @@ class AudioPlayerService : Service() {
         }
 
         scope.launch {
-            playerController?.encounteredError?.collect { err ->
+            engine?.encounteredError?.collect { err ->
                 if (err != null) {
                     _playbackError.value = err
                 }
@@ -184,13 +201,13 @@ class AudioPlayerService : Service() {
         }
 
         scope.launch {
-            playerController?.totalDuration?.collect { dur ->
+            engine?.totalDuration?.collect { dur ->
                 if (dur > 0L) {
                     val cur = _currentTrack.value
                     if (cur != null && cur.duration != dur) {
                         val updated = cur.copy(duration = dur)
                         _currentTrack.value = updated
-                        updateTrackMetadataAndNotification(updated, playerController?.isPlaying?.value == true)
+                        updateTrackMetadataAndNotification(updated, engine?.isPlaying?.value == true)
                     }
                 }
             }
@@ -203,8 +220,8 @@ class AudioPlayerService : Service() {
         // controls and is cheap.
         scope.launch {
             while (isActive) {
-                if (playerController?.isPlaying?.value == true) {
-                    updatePlaybackState(true, playerController?.currentTime?.value ?: 0L)
+                if (engine?.isPlaying?.value == true) {
+                    updatePlaybackState(true, engine?.currentTime?.value ?: 0L)
                 }
                 delay(1000L)
             }
@@ -272,16 +289,16 @@ class AudioPlayerService : Service() {
             )
             setCallback(object : MediaSessionCompat.Callback() {
                 override fun onPlay() {
-                    if (playerController?.mediaPlayer?.isPlaying == true) return
+                    if (engine?.isPlaying?.value == true) return
                     resumeOnFocusGain = false
                     lastPlayStartTime = System.currentTimeMillis()
                     requestAudioFocus()
-                    playerController?.play()
+                    engine?.play()
                 }
 
                 override fun onPause() {
                     resumeOnFocusGain = false
-                    playerController?.pause()
+                    engine?.pause()
                 }
 
                 override fun onSkipToNext() {
@@ -293,8 +310,8 @@ class AudioPlayerService : Service() {
                 }
 
                 override fun onSeekTo(pos: Long) {
-                    playerController?.seekTo(pos)
-                    updatePlaybackState(playerController?.isPlaying?.value == true, pos)
+                    engine?.seekTo(pos)
+                    updatePlaybackState(engine?.isPlaying?.value == true, pos)
                 }
 
                 override fun onCustomAction(action: String?, extras: Bundle?) {
@@ -324,7 +341,7 @@ class AudioPlayerService : Service() {
             AudioManager.AUDIOFOCUS_LOSS -> {
                 hasAudioFocus = false
                 resumeOnFocusGain = false
-                playerController?.pause()
+                engine?.pause()
                 publishPausedByFocus()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
@@ -333,9 +350,9 @@ class AudioPlayerService : Service() {
                     return@OnAudioFocusChangeListener
                 }
                 hasAudioFocus = false
-                val wasPlaying = playerController?.isPlaying?.value == true
+                val wasPlaying = engine?.isPlaying?.value == true
                 resumeOnFocusGain = wasPlaying
-                playerController?.pause()
+                engine?.pause()
                 if (wasPlaying) publishPausedByFocus()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
@@ -344,14 +361,14 @@ class AudioPlayerService : Service() {
                     logAudioState("ignored duck ${msSinceStart}ms after start")
                     return@OnAudioFocusChangeListener
                 }
-                playerController?.rampVolume(70, 120L)
+                engine?.rampVolume(70, 120L)
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 hasAudioFocus = true
-                playerController?.rampVolume(vlcVolume.value, 80L)
+                engine?.rampVolume(vlcVolume.value, 80L)
                 if (resumeOnFocusGain) {
                     resumeOnFocusGain = false
-                    playerController?.play()
+                    engine?.play()
                 }
             }
         }
@@ -475,10 +492,10 @@ class AudioPlayerService : Service() {
         _currentTrack.value = streamItem
         lastPlayStartTime = System.currentTimeMillis()
         resumeOnFocusGain = false
-        playerController?.resetProgress()
+        engine?.resetProgress()
         requestAudioFocus()
         AudioSession.open(this)
-        playerController?.playMedia(url, streamUri, 0L, username, password)
+        engine?.playMedia(url, streamUri, 0L, username, password)
         updateTrackMetadataAndNotification(streamItem, isPlaying = true)
     }
 
@@ -510,10 +527,11 @@ class AudioPlayerService : Service() {
             // Remote entries have no durable local identity, so they stay out of the play
             // history and the saved session. The queue comes back from a new search instead.
             resumeOnFocusGain = false
-            playerController?.resetProgress()
-            // Silence the previous track immediately. Leaving it audible while the new stream is
-            // resolved is what made the old song keep playing under the new title.
+            engine?.resetProgress()
+            // Silence whatever was playing before: the LibVLC engine may still hold the previous
+            // local track, while the ExoPlayer engine holds the previous remote one.
             playerController?.stop()
+            exoEngine?.stop()
             if (playHistory.lastOrNull() != currentIndex) {
                 playHistory.addLast(currentIndex)
                 if (playHistory.size > 120) playHistory.removeFirst()
@@ -539,15 +557,17 @@ class AudioPlayerService : Service() {
         }
         // This explicit track start supersedes any pending focus-gain resume from old media.
         resumeOnFocusGain = false
+        // Switching back from YouTube: the ExoPlayer engine may still hold the previous stream.
+        exoEngine?.stop()
         // Clear the previous track's position so the UI never shows a stale time/progress
-        playerController?.resetProgress()
+        engine?.resetProgress()
         if (playHistory.lastOrNull() != currentIndex) {
             playHistory.addLast(currentIndex)
             if (playHistory.size > 120) playHistory.removeFirst()
         }
         requestAudioFocus()
         AudioSession.open(this)
-        playerController?.playMedia(track.path, track.uri)
+        engine?.playMedia(track.path, track.uri)
         updateTrackMetadataAndNotification(track, isPlaying = true)
 
         // Asynchronously fetch online artwork and artist if local art is absent or artist is unknown
@@ -571,7 +591,7 @@ class AudioPlayerService : Service() {
                                 pl[idx] = updated
                                 _playlist.value = pl
                             }
-                            updateTrackMetadataAndNotification(updated, playerController?.isPlaying?.value == true)
+                            updateTrackMetadataAndNotification(updated, engine?.isPlaying?.value == true)
                         }
                     }
                 }
@@ -585,7 +605,7 @@ class AudioPlayerService : Service() {
      */
     private fun playRemoteTrack(track: AudioItem, videoId: String, requestToken: Long) {
         scope.launch {
-            val controller = playerController
+            val controller = engine
             val usedUrls = mutableSetOf<String>()
             var attempt = 0
             while (attempt < MAX_PLAYBACK_ATTEMPTS) {
@@ -653,7 +673,7 @@ class AudioPlayerService : Service() {
      * reports Playing. Returns false when the stream stalls or the request became stale.
      */
     private suspend fun awaitPlaybackStart(
-        controller: LibVlcController?,
+        controller: AudioEngine?,
         requestToken: Long
     ): Boolean {
         if (controller == null) return false
@@ -713,7 +733,7 @@ class AudioPlayerService : Service() {
                 showNotification(track.copy(artist = displayArtist), isPlaying, bitmap)
                 // Republish after the metadata lands so lockscreen / QS controls pick up the
                 // fresh like state (the custom action icon lives in PlaybackState).
-                updatePlaybackState(playerController?.isPlaying?.value ?: isPlaying)
+                updatePlaybackState(engine?.isPlaying?.value ?: isPlaying)
             }
         }
     }
@@ -800,7 +820,7 @@ class AudioPlayerService : Service() {
                 else -> PlaybackStateCompat.REPEAT_MODE_NONE
             }
         )
-        updatePlaybackState(playerController?.isPlaying?.value == true)
+        updatePlaybackState(engine?.isPlaying?.value == true)
     }
 
     fun toggleShuffle() {
@@ -809,7 +829,7 @@ class AudioPlayerService : Service() {
             if (isShuffle.value) PlaybackStateCompat.SHUFFLE_MODE_ALL
             else PlaybackStateCompat.SHUFFLE_MODE_NONE
         )
-        updatePlaybackState(playerController?.isPlaying?.value == true)
+        updatePlaybackState(engine?.isPlaying?.value == true)
     }
 
     private fun onTrackEnded() {
@@ -819,7 +839,7 @@ class AudioPlayerService : Service() {
         if (_isLoadingRemote.value) return
         // Ignore switch-generated end events, but scale the guard for short tracks so their
         // legitimate EndReached event is not discarded by a fixed 1.5 second delay.
-        val durationMs = playerController?.totalDuration?.value
+        val durationMs = engine?.totalDuration?.value
             ?.takeIf { it > 0L }
             ?: _currentTrack.value?.duration
             ?: 0L
@@ -841,7 +861,7 @@ class AudioPlayerService : Service() {
                     playNext()
                 } else {
                     // Reached end of playlist
-                    playerController?.seekTo(0L)
+                    engine?.seekTo(0L)
                     updatePlaybackState(false, 0L)
                 }
             }
@@ -849,19 +869,19 @@ class AudioPlayerService : Service() {
     }
 
     fun seekTo(timeMs: Long) {
-        playerController?.seekTo(timeMs)
-        updatePlaybackState(playerController?.isPlaying?.value == true, timeMs)
+        engine?.seekTo(timeMs)
+        updatePlaybackState(engine?.isPlaying?.value == true, timeMs)
     }
 
     fun seekBy(deltaMs: Long) {
-        playerController?.seekBy(deltaMs)
-        updatePlaybackState(playerController?.isPlaying?.value == true)
+        engine?.seekBy(deltaMs)
+        updatePlaybackState(engine?.isPlaying?.value == true)
     }
 
     fun setVolume(volume: Int) {
         val applied = volume.coerceIn(0, 200)
         vlcVolume.value = applied
-        playerController?.setVolume(applied)
+        engine?.setVolume(applied)
     }
 
     fun getVolume(): Int {
@@ -880,9 +900,9 @@ class AudioPlayerService : Service() {
         _favoriteTrackIds.value = prefsManager.getFavorites()
         val curTrack = _currentTrack.value
         if (curTrack != null && curTrack.id == trackId) {
-            updateTrackMetadataAndNotification(curTrack, playerController?.isPlaying?.value == true)
+            updateTrackMetadataAndNotification(curTrack, engine?.isPlaying?.value == true)
         }
-        updatePlaybackState(playerController?.isPlaying?.value == true)
+        updatePlaybackState(engine?.isPlaying?.value == true)
     }
 
     fun addToQueue(track: AudioItem) {
@@ -914,9 +934,9 @@ class AudioPlayerService : Service() {
         val tracks = _playlist.value
         if (tracks.isEmpty()) return
         if (tracks.size == 1) {
-            playerController?.seekTo(0L)
-            if (playerController?.isPlaying?.value != true) {
-                playerController?.play()
+            engine?.seekTo(0L)
+            if (engine?.isPlaying?.value != true) {
+                engine?.play()
             }
             return
         }
@@ -944,16 +964,16 @@ class AudioPlayerService : Service() {
         val tracks = _playlist.value
         if (tracks.isEmpty()) return
         if (tracks.size == 1) {
-            playerController?.seekTo(0L)
-            if (playerController?.isPlaying?.value != true) {
-                playerController?.play()
+            engine?.seekTo(0L)
+            if (engine?.isPlaying?.value != true) {
+                engine?.play()
             }
             return
         }
         // Live position first: the cached tick can be stale right after a track change
-        val currentPos = playerController?.currentPositionMs() ?: 0L
+        val currentPos = engine?.currentPositionMs() ?: 0L
         if (currentPos > previousRestartThresholdMs) {
-            playerController?.seekTo(0L)
+            engine?.seekTo(0L)
             return
         }
         if (isShuffle.value && playHistory.size >= 2) {
@@ -970,7 +990,7 @@ class AudioPlayerService : Service() {
             // Repeat All / Repeat One wrap to the last track, plain "Off" just restarts this one
             repeatMode.value != 0 -> tracks.size - 1
             else -> {
-                playerController?.seekTo(0L)
+                engine?.seekTo(0L)
                 return
             }
         }
@@ -986,7 +1006,7 @@ class AudioPlayerService : Service() {
         _playlist.value = list
         if (list.isEmpty()) {
             _currentTrack.value = null
-            playerController?.mediaPlayer?.stop()
+            engine?.stop()
             updatePlaybackState(false)
         } else if (isCurrent) {
             currentIndex = removeIndex.coerceIn(0, list.size - 1)
@@ -1017,23 +1037,23 @@ class AudioPlayerService : Service() {
         // A direct user command supersedes any automatic focus-gain resume, including pause.
         resumeOnFocusGain = false
         // Restored session: the track is shown in the mini player but no media was ever loaded.
-        if (playerController?.mediaPlayer?.media == null && _currentTrack.value != null) {
+        if (engine?.hasMedia() != true && _currentTrack.value != null) {
             playCurrent()
             return
         }
-        val isCurrentlyPlaying = playerController?.isPlaying?.value == true
+        val isCurrentlyPlaying = engine?.isPlaying?.value == true
         logAudioState("toggle requested wasPlaying=$isCurrentlyPlaying")
         if (isCurrentlyPlaying) {
             // Keep audio focus while paused. Abandoning it made Android/MIUI tear the audio route
             // down (Bluetooth especially), so the next play needed ~0.5s before any sound.
-            playerController?.togglePlayPause()
+            engine?.togglePlayPause()
         } else {
             lastPlayStartTime = System.currentTimeMillis()
             requestAudioFocus()
-            if (playerController?.hasEnded == true || playerController?.playerState == 6) {
+            if (engine?.isFinished == true) {
                 playCurrent()
             } else {
-                playerController?.togglePlayPause()
+                engine?.togglePlayPause()
             }
         }
     }
@@ -1042,10 +1062,10 @@ class AudioPlayerService : Service() {
         val am = audioManager ?: (getSystemService(Context.AUDIO_SERVICE) as AudioManager).also { audioManager = it }
         Log.i(
             AUDIO_DIAG_TAG,
-            "$event playing=${playerController?.isPlaying?.value} " +
-                "buffering=${playerController?.isBuffering?.value} " +
+            "$event playing=${engine?.isPlaying?.value} " +
+                "buffering=${engine?.isBuffering?.value} " +
                 "track=${_currentTrack.value?.title} " +
-                "vlcVolume=${playerController?.getVolume()} " +
+                "vlcVolume=${engine?.getVolume()} " +
                 "musicVolume=${am.getStreamVolume(AudioManager.STREAM_MUSIC)}/${am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)} " +
                 "focusHeld=$hasAudioFocus resumeOnGain=$resumeOnFocusGain"
         )
@@ -1061,7 +1081,7 @@ class AudioPlayerService : Service() {
             isPlaying -> PlaybackStateCompat.STATE_PLAYING
             else -> PlaybackStateCompat.STATE_PAUSED
         }
-        val position = if (customPosition >= 0L) customPosition else (playerController?.currentTime?.value ?: 0L)
+        val position = if (customPosition >= 0L) customPosition else (engine?.currentTime?.value ?: 0L)
         val track = _currentTrack.value
         // Likes only exist for tracks in the on-device library; a YouTube entry has no durable id,
         // so the like action is left out of the system UI for it.
@@ -1205,8 +1225,8 @@ class AudioPlayerService : Service() {
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
-                if (playerController?.isPlaying?.value == true) {
-                    playerController?.togglePlayPause()
+                if (engine?.isPlaying?.value == true) {
+                    engine?.togglePlayPause()
                 }
             }
         }
@@ -1236,7 +1256,7 @@ class AudioPlayerService : Service() {
     override fun onTaskRemoved(rootIntent: Intent?) {
         // Swiping the app out of recents must stop playback and the service.
         // Without this the foreground service kept the process (and audio) alive indefinitely.
-        try { playerController?.stop() } catch (_: Exception) {}
+        try { engine?.stop() } catch (_: Exception) {}
         abandonAudioFocus()
         AudioSession.close(this)
         mediaSession?.isActive = false
@@ -1261,7 +1281,11 @@ class AudioPlayerService : Service() {
         }
         mediaSession?.isActive = false
         mediaSession?.release()
+        // Both engines exist for the whole service lifetime, so both are released here.
         playerController?.release()
+        exoEngine?.release()
+        playerController = null
+        exoEngine = null
         releaseWakeLock()
     }
 

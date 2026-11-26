@@ -26,7 +26,12 @@ class LibVlcController(
     private val enableAudioSession: Boolean = true,
     private val customAudioSessionId: Int? = null,
     private val isVideoFlow: Boolean = false
-) {
+) : AudioEngine {
+
+    override val isFinished: Boolean
+        get() = hasEnded || playerState == 6
+
+    override fun hasMedia(): Boolean = mediaPlayer?.media != null
 
     private var libVLC: LibVLC? = null
     var mediaPlayer: MediaPlayer? = null
@@ -34,13 +39,13 @@ class LibVlcController(
     private var currentPfd: android.os.ParcelFileDescriptor? = null
 
     private val _isPlaying = MutableStateFlow(false)
-    val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
+    override val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
     private val _currentTime = MutableStateFlow(0L)
-    val currentTime: StateFlow<Long> = _currentTime.asStateFlow()
+    override val currentTime: StateFlow<Long> = _currentTime.asStateFlow()
 
     private val _totalDuration = MutableStateFlow(0L)
-    val totalDuration: StateFlow<Long> = _totalDuration.asStateFlow()
+    override val totalDuration: StateFlow<Long> = _totalDuration.asStateFlow()
 
     private val _videoSize = MutableStateFlow<Pair<Int, Int>>(Pair(0, 0))
     val videoSize: StateFlow<Pair<Int, Int>> = _videoSize.asStateFlow()
@@ -49,10 +54,10 @@ class LibVlcController(
     val buffering: StateFlow<Float> = _buffering.asStateFlow()
 
     private val _isBuffering = MutableStateFlow(true)
-    val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
+    override val isBuffering: StateFlow<Boolean> = _isBuffering.asStateFlow()
 
     private val _encounteredError = MutableStateFlow<String?>(null)
-    val encounteredError: StateFlow<String?> = _encounteredError.asStateFlow()
+    override val encounteredError: StateFlow<String?> = _encounteredError.asStateFlow()
 
     var onError: ((String) -> Unit)? = null
 
@@ -463,7 +468,7 @@ class LibVlcController(
         }
     }
 
-    fun playMedia(
+    override fun playMedia(
         path: String,
         uri: Uri? = null,
         resumePositionMs: Long = 0L,
@@ -756,7 +761,7 @@ class LibVlcController(
         }
     }
 
-    fun togglePlayPause() {
+    override fun togglePlayPause() {
         val player = mediaPlayer ?: return
         // While the short fade-out before a pause is still running the stream is technically
         // playing, so a fast second tap must resume instead of queueing another pause.
@@ -771,7 +776,7 @@ class LibVlcController(
         }
     }
 
-    fun play() {
+    override fun play() {
         val player = mediaPlayer ?: return
         cancelVolumeRamp()
         pendingPause = false
@@ -803,7 +808,7 @@ class LibVlcController(
         }
     }
 
-    fun pause() {
+    override fun pause() {
         val player = mediaPlayer ?: return
         if (!player.isPlaying || pendingPause) return
         cancelVolumeRamp()
@@ -828,7 +833,7 @@ class LibVlcController(
     }
 
     /** Fast temporary level change (audio focus ducking) that keeps the user's logical volume. */
-    fun rampVolume(targetVolume: Int, durationMs: Long = 90L) {
+    override fun rampVolume(targetVolume: Int, durationMs: Long = 90L) {
         val player = mediaPlayer ?: return
         if (pendingPause) return
         cancelVolumeRamp()
@@ -859,7 +864,7 @@ class LibVlcController(
         volumeRampJob = null
     }
 
-    fun stop() {
+    override fun stop() {
         val player = mediaPlayer ?: return
         // Stopping invalidates any fade that is still in flight.
         pauseGeneration++
@@ -871,7 +876,7 @@ class LibVlcController(
         currentPfd = null
     }
 
-    fun seekTo(timeMs: Long) {
+    override fun seekTo(timeMs: Long) {
         val target = timeMs.coerceAtLeast(0L)
         pendingSeekTargetMs = target
         pendingSeekStartedAtMs = SystemClock.elapsedRealtime()
@@ -880,7 +885,7 @@ class LibVlcController(
     }
 
     /** Clears the cached position/duration when a new track is loaded. */
-    fun resetProgress() {
+    override fun resetProgress() {
         pendingResumePositionMs = 0L
         pendingSeekTargetMs = null
         _currentTime.value = 0L
@@ -922,7 +927,7 @@ class LibVlcController(
         return if (live > 0L) live else _currentTime.value
     }
 
-    fun seekBy(deltaMs: Long) {
+    override fun seekBy(deltaMs: Long) {
         val player = mediaPlayer ?: return
         val curTime = player.time
         val dur = if (player.length > 0) player.length else _totalDuration.value
@@ -947,7 +952,7 @@ class LibVlcController(
         return currentPlaybackSpeed
     }
 
-    fun setVolume(volumeLevel: Int) {
+    override fun setVolume(volumeLevel: Int) {
         // LibVLC native volume scale is 0 to 200 (200% native software boost)
         val appliedVolume = volumeLevel.coerceIn(0, 200)
         lastRequestedVolume = appliedVolume
@@ -960,7 +965,7 @@ class LibVlcController(
         Log.i(AUDIO_DIAG_TAG, "setLibVlcVolume requested=$volumeLevel applied=$appliedVolume")
     }
 
-    fun getVolume(): Int {
+    override fun getVolume(): Int {
         return mediaPlayer?.volume?.takeIf { it >= 0 } ?: lastRequestedVolume
     }
 
@@ -1171,7 +1176,7 @@ class LibVlcController(
         return null
     }
 
-    fun release() {
+    override fun release() {
         playbackWatchdogJob?.cancel()
         playbackWatchdogJob = null
         stopProgressUpdates()

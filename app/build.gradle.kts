@@ -118,8 +118,7 @@ dependencies {
     implementation("androidx.activity:activity-compose:1.9.3")
     implementation("androidx.lifecycle:lifecycle-runtime-compose:2.8.7")
 
-    // Jetpack Compose & Material 3
-    implementation("androidx.compose.ui:ui")
+    // Jetpack Compose & Material 3    implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.ui:ui-graphics")
     implementation("androidx.compose.ui:ui-tooling-preview")
     implementation("androidx.compose.material3:material3")
@@ -137,6 +136,9 @@ dependencies {
 
     // Universal Video & Audio Core: LibVLC
     implementation("org.videolan.android:libvlc-all:3.6.5")
+
+    // ExoPlayer (Media3) drives YouTube Music streams; LibVLC keeps local files and video.
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
 
     // Audio ID3 Tag Engine (MP3, FLAC, M4A, OGG)
     implementation("net.jthink:jaudiotagger:3.0.1")
