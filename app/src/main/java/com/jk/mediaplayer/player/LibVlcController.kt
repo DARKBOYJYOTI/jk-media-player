@@ -116,9 +116,10 @@ class LibVlcController(
     private var pendingPause: Boolean = false
     /** Bumped whenever playback state changes, so a stale pause fade cannot touch new media. */
     private var pauseGeneration: Long = 0L
-    /** Music crossfades softly; video starts and stops instantly. */
-    private val musicFadeInMs: Long = if (isVideoFlow) 0L else 300L
-    private val musicFadeOutMs: Long = if (isVideoFlow) 0L else 220L
+    /** Music crossfades softly; video starts and stops instantly.
+     *  A/B: fades off while isolating the speaker click. */
+    private val musicFadeInMs: Long = 0L
+    private val musicFadeOutMs: Long = 0L
     private var targetAudioSessionId: Int = 0
 
     private var bufferingJob: kotlinx.coroutines.Job? = null
@@ -333,15 +334,9 @@ class LibVlcController(
         // Every option in this list must exist in the bundled libvlc build: one unknown option
         // makes libvlc_new() return null and the whole list is thrown away. "sub-autodetect-caching"
         // is not part of VLC 3.6 and used to force the safe fallback on every launch.
-        // VLC Android uses AAudio as the primary output from API 28: it has correct latency and a
-        // working timestamp, while the Java AudioTrack path (capability 180) can restart the
-        // output on pause/resume and was heard as a click on the speaker. Older devices need
-        // AudioTrack; keep it as the fallback when AAudio is unavailable.
-        val audioOutputOption = if (android.os.Build.VERSION.SDK_INT >= 28) {
-            "--aout=aaudio"
-        } else {
-            "--aout=android_audiotrack"
-        }
+        // This libvlc build (3.0.22) has no AAudio module, only audiotrack and opensles.
+        // Keep the AudioTrack output explicit so the list is not silently downgraded.
+        val audioOutputOption = "--aout=android_audiotrack"
         val stretchOption = if (isVideoFlow) "--audio-time-stretch" else "--no-audio-time-stretch"
         val primaryOptions = arrayListOf(
             audioOutputOption,
@@ -808,7 +803,11 @@ class LibVlcController(
         val logical = lastRequestedVolume
         val freshStart = !hasEverPlayed && _currentTime.value < 500L
         val fadeIn = if (freshStart) musicFadeInMs else 0L
-        try { player.volume = if (fadeIn > 0L) 0 else logical } catch (_: Throwable) {}
+        // Only write the level when a ramp needs it. A plain resume keeps the AudioTrack volume
+        // untouched: writing the same value is heard as a click on the phone speaker.
+        if (fadeIn > 0L) {
+            try { player.volume = 0 } catch (_: Throwable) {}
+        }
         player.play()
         if (attachedLayout != null) {
             applyResizeMode()
@@ -824,14 +823,14 @@ class LibVlcController(
         val player = mediaPlayer ?: return
         if (!player.isPlaying || pendingPause) return
         // A pause in the first moment of playback skips the fade: the AudioTrack is still settling
-        // and a second volume ramp makes the output restart audibly.
+        // and a second volume ramp makes the output restart audibly. With fades disabled the level
+        // is left exactly as it is: only the pause command reaches the AudioTrack.
         val sinceStart = SystemClock.elapsedRealtime() - playbackStartTimeMs
-        if (sinceStart < 600L) {
+        if (sinceStart < 600L || musicFadeOutMs <= 0L) {
             cancelVolumeRamp()
             pendingPause = false
             pauseGeneration++
             try { player.pause() } catch (_: Throwable) {}
-            try { player.volume = lastRequestedVolume } catch (_: Throwable) {}
             _isPlaying.value = false
             return
         }
@@ -892,7 +891,8 @@ class LibVlcController(
     fun stopWithFade() {
         val player = mediaPlayer ?: return
         // Too early to fade: the output is still settling and a ramp would restart it audibly.
-        if (!player.isPlaying || SystemClock.elapsedRealtime() - playbackStartTimeMs < 600L) {
+        if (!player.isPlaying || musicFadeOutMs <= 0L ||
+            SystemClock.elapsedRealtime() - playbackStartTimeMs < 600L) {
             stop()
             return
         }
