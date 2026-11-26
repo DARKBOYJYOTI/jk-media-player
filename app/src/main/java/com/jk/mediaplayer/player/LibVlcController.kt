@@ -116,10 +116,9 @@ class LibVlcController(
     private var pendingPause: Boolean = false
     /** Bumped whenever playback state changes, so a stale pause fade cannot touch new media. */
     private var pauseGeneration: Long = 0L
-    /** Music crossfades softly; video starts and stops instantly.
-     *  Temporarily disabled (A/B) while isolating the speaker click. */
-    private val musicFadeInMs: Long = 0L
-    private val musicFadeOutMs: Long = 0L
+    /** Music crossfades softly; video starts and stops instantly. */
+    private val musicFadeInMs: Long = if (isVideoFlow) 0L else 300L
+    private val musicFadeOutMs: Long = if (isVideoFlow) 0L else 220L
     private var targetAudioSessionId: Int = 0
 
     private var bufferingJob: kotlinx.coroutines.Job? = null
@@ -334,21 +333,30 @@ class LibVlcController(
         // Every option in this list must exist in the bundled libvlc build: one unknown option
         // makes libvlc_new() return null and the whole list is thrown away. "sub-autodetect-caching"
         // is not part of VLC 3.6 and used to force the safe fallback on every launch.
+        // VLC Android uses AAudio as the primary output from API 28: it has correct latency and a
+        // working timestamp, while the Java AudioTrack path (capability 180) can restart the
+        // output on pause/resume and was heard as a click on the speaker. Older devices need
+        // AudioTrack; keep it as the fallback when AAudio is unavailable.
+        val audioOutputOption = if (android.os.Build.VERSION.SDK_INT >= 28) {
+            "--aout=aaudio"
+        } else {
+            "--aout=android_audiotrack"
+        }
+        val stretchOption = if (isVideoFlow) "--audio-time-stretch" else "--no-audio-time-stretch"
         val primaryOptions = arrayListOf(
-            "--aout=android_audiotrack", // High-fidelity native Android AudioTrack engine for bit-perfect audio effects
+            audioOutputOption,
             "--avcodec-hw=any",        // Hardware acceleration with fallback to software
             "--file-caching=400",      // Optimal buffer eliminating choke & initial stall
             "--network-caching=1000",
-            "--audio-time-stretch",    // Preserve audio pitch when changing speed
+            stretchOption,            // Pitch correction only where speed control exists
             "--sub-text-scale=100",    // Crisp high-resolution subtitles
             "--subsdec-encoding=UTF-8",// Universal UTF-8 subtitle decoding (prevents boxes/tofu on non-English scripts)
             subtitleMarginOption(),    // Density-aware bottom margin keeps cues clear of the seek bar
             "--sub-autodetect-fuzzy=3" // Automatic subtitle file detection (.srt, .vtt, .sub, .ass)
         )
         // Cached positions are not worth the crash: if the rich list is ever rejected by a future
-        // bundled build, retry without the optional media options before giving up on them,
-        // because audio-time-stretch and HW decoding must survive.
-        val mediaOnlyOptions = arrayOf("--avcodec-hw=any", "--network-caching=1000", "--audio-time-stretch")
+        // bundled build, retry without the optional media options before giving up on them.
+        val mediaOnlyOptions = arrayOf("--avcodec-hw=any", "--network-caching=1000", "--audio-time-stretch", "--no-audio-time-stretch")
         val fallbackOptions = arrayListOf(
             "--aout=android_audiotrack",
             "--file-caching=400",
