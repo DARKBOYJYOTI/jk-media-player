@@ -1131,6 +1131,8 @@ class AudioPlayerService : Service() {
             ).apply {
                 description = "Shows active music playback notification"
                 setShowBadge(false)
+                setSound(null, null)
+                enableVibration(false)
             }
             val manager = getSystemService(NotificationManager::class.java)
             manager.createNotificationChannel(channel)

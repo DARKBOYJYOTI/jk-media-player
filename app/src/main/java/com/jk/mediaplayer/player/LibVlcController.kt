@@ -163,11 +163,12 @@ class LibVlcController(
                 _isPlaying.value = true
                 _isBuffering.value = false
                 _encounteredError.value = null
-                if (mediaPlayer?.volume != lastRequestedVolume) {
-                    // Do not snap the level while the start ramp is still running; a hard jump
-                    // from a partly faded level is audible as a dip.
-                    val current = mediaPlayer?.volume ?: lastRequestedVolume
-                    if (kotlin.math.abs(current - lastRequestedVolume) > 20) {
+                val currentVol = mediaPlayer?.volume ?: -1
+                if (currentVol >= 0 && currentVol != lastRequestedVolume) {
+                    // Ignore libVLC's -1 sentinel before the AudioTrack is ready, and do not snap
+                    // the level while a start ramp is running; writing volume on the first PCM
+                    // frame causes an audible speaker click.
+                    if (kotlin.math.abs(currentVol - lastRequestedVolume) > 20) {
                         mediaPlayer?.volume = lastRequestedVolume
                     }
                 }
@@ -238,7 +239,7 @@ class LibVlcController(
                     playbackWatchdogJob?.cancel()
                     playbackWatchdogJob = null
                     _isBuffering.value = false
-                    if (wasFirstFrame) {
+                    if (wasFirstFrame && attachedLayout != null) {
                         applyResizeMode()
                     }
                 }
@@ -257,17 +258,19 @@ class LibVlcController(
                 }
             }
             MediaPlayer.Event.ESAdded -> {
-                // Audio/Subtitle/Video track discovered
-                applyResizeMode()
-                if (hasUserSelectedSubtitle && userSelectedSubtitleTrackId >= 0) {
-                    mediaPlayer?.spuTrack = userSelectedSubtitleTrackId
-                } else {
-                    enforceSubtitleOff()
-                }
-                val curW = getVideoWidth()
-                val curH = getVideoHeight()
-                if (curW > 0 && curH > 0) {
-                    _videoSize.value = Pair(curW, curH)
+                // Audio/Subtitle/Video track discovered; resize and subtitle checks are video-only.
+                if (attachedLayout != null) {
+                    applyResizeMode()
+                    if (hasUserSelectedSubtitle && userSelectedSubtitleTrackId >= 0) {
+                        mediaPlayer?.spuTrack = userSelectedSubtitleTrackId
+                    } else {
+                        enforceSubtitleOff()
+                    }
+                    val curW = getVideoWidth()
+                    val curH = getVideoHeight()
+                    if (curW > 0 && curH > 0) {
+                        _videoSize.value = Pair(curW, curH)
+                    }
                 }
             }
             MediaPlayer.Event.LengthChanged -> _totalDuration.value = event.lengthChanged
@@ -377,26 +380,45 @@ class LibVlcController(
             ab.timeStretch -> "--audio-time-stretch"
             else -> "--no-audio-time-stretch"
         }
+        val hwDecodeOption = if (isVideoFlow) "--avcodec-hw=any" else "--avcodec-hw=none"
         val primaryOptions = arrayListOf(
             audioOutputOption,
-            "--avcodec-hw=any",        // Hardware acceleration with fallback to software
+            hwDecodeOption,            // Software audio decoding for music avoids MediaCodec init clicks
             "--file-caching=${ab.fileCachingMs}", // Optimal buffer eliminating choke & initial stall
             "--network-caching=1000",
-            stretchOption,            // Pitch correction only where speed control exists
-            "--sub-text-scale=100",    // Crisp high-resolution subtitles
-            "--subsdec-encoding=UTF-8",// Universal UTF-8 subtitle decoding (prevents boxes/tofu on non-English scripts)
-            subtitleMarginOption(),    // Density-aware bottom margin keeps cues clear of the seek bar
-            "--sub-autodetect-fuzzy=3" // Automatic subtitle file detection (.srt, .vtt, .sub, .ass)
+            stretchOption              // Pitch correction only where speed control exists
         )
+        if (isVideoFlow) {
+            primaryOptions.addAll(
+                listOf(
+                    "--sub-text-scale=100",    // Crisp high-resolution subtitles
+                    "--subsdec-encoding=UTF-8",// Universal UTF-8 subtitle decoding (prevents boxes/tofu on non-English scripts)
+                    subtitleMarginOption(),    // Density-aware bottom margin keeps cues clear of the seek bar
+                    "--sub-autodetect-fuzzy=3" // Automatic subtitle file detection (.srt, .vtt, .sub, .ass)
+                )
+            )
+        } else {
+            primaryOptions.add("--no-sub-autodetect-file")
+        }
         // Cached positions are not worth the crash: if the rich list is ever rejected by a future
         // bundled build, retry without the optional media options before giving up on them.
-        val mediaOnlyOptions = arrayOf("--avcodec-hw=any", "--network-caching=1000", "--audio-time-stretch", "--no-audio-time-stretch")
+        val mediaOnlyOptions = arrayOf(
+            "--avcodec-hw=any",
+            "--avcodec-hw=none",
+            "--network-caching=1000",
+            "--audio-time-stretch",
+            "--no-audio-time-stretch",
+            "--no-sub-autodetect-file"
+        )
         val fallbackOptions = arrayListOf(
             "--aout=${ab.aout}",
-            "--file-caching=${ab.fileCachingMs}",
-            "--subsdec-encoding=UTF-8",
-            "--sub-margin=50"
-        )
+            "--file-caching=${ab.fileCachingMs}"
+        ).apply {
+            if (isVideoFlow) {
+                add("--subsdec-encoding=UTF-8")
+                add("--sub-margin=50")
+            }
+        }
         if (ab.verbose) {
             primaryOptions.add("--verbose=2")
         }
@@ -422,7 +444,9 @@ class LibVlcController(
             return
         }
         mediaPlayer = MediaPlayer(libVLC).apply {
-            volume = lastRequestedVolume
+            if (lastRequestedVolume != 100) {
+                volume = lastRequestedVolume
+            }
             if (currentPlaybackSpeed != 1.0f) {
                 rate = currentPlaybackSpeed
             }
@@ -545,12 +569,16 @@ class LibVlcController(
         lastPlayedPath = path
         lastPlayedUri = uri
         _videoSize.value = Pair(0, 0)
-        try {
-            val prefs = PreferencesManager(context)
-            val mediaKey = path.ifEmpty { uri?.toString() ?: "" }
-            val savedModeStr = if (mediaKey.isNotEmpty()) prefs.getVideoResizeMode(mediaKey) ?: prefs.getDefaultResizeMode() else prefs.getDefaultResizeMode()
-            currentResizeMode = ResizeMode.fromString(savedModeStr)
-        } catch (_: Throwable) {}
+        if (isVideoFlow) {
+            try {
+                val prefs = PreferencesManager(context)
+                val mediaKey = path.ifEmpty { uri?.toString() ?: "" }
+                val savedModeStr = if (mediaKey.isNotEmpty()) prefs.getVideoResizeMode(mediaKey) ?: prefs.getDefaultResizeMode() else prefs.getDefaultResizeMode()
+                currentResizeMode = ResizeMode.fromString(savedModeStr)
+            } catch (_: Throwable) {}
+        }
+        val previousPfd = currentPfd
+        var newPfd: android.os.ParcelFileDescriptor? = null
         try {
             val isOnlineStream = path.startsWith("http://", true) ||
                 path.startsWith("https://", true) ||
@@ -574,9 +602,6 @@ class LibVlcController(
                 }
             }
 
-            try { currentPfd?.close() } catch (_: Exception) {}
-            currentPfd = null
-
             val forcedDemux = detectDemuxer(path, uri)
             val media = when {
                 isOnlineStream -> {
@@ -591,14 +616,10 @@ class LibVlcController(
                             android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
                         } catch (_: Exception) { null }
                         if (pfd != null) {
-                            currentPfd = pfd
-                            val m = Media(vlc, pfd.fileDescriptor)
-                            m.addOption(":demux=$forcedDemux,any")
-                            m
+                            newPfd = pfd
+                            Media(vlc, pfd.fileDescriptor)
                         } else {
-                            val m = Media(vlc, path)
-                            m.addOption(":demux=$forcedDemux,any")
-                            m
+                            Media(vlc, path)
                         }
                     } else {
                         Media(vlc, path)
@@ -612,18 +633,14 @@ class LibVlcController(
                             reportError("Cannot play video. File is empty (0 bytes) or corrupted.")
                             return
                         }
-                        currentPfd = pfd
-                        val m = Media(vlc, pfd.fileDescriptor)
-                        if (forcedDemux != null) m.addOption(":demux=$forcedDemux,any")
-                        m
+                        newPfd = pfd
+                        Media(vlc, pfd.fileDescriptor)
                     } else {
                         if (uri.scheme == "content") {
                             reportError("Cannot open video. Storage access denied or file was deleted.")
                             return
                         }
-                        val m = Media(vlc, uri)
-                        if (forcedDemux != null) m.addOption(":demux=$forcedDemux,any")
-                        m
+                        Media(vlc, uri)
                     }
                 }
                 else -> {
@@ -642,6 +659,9 @@ class LibVlcController(
             } else {
                 pendingResumePositionMs = resumePositionMs
             }
+            val isLocalAudioFile = !isOnlineStream && listOf(
+                ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac", ".opus", ".wma", ".alac", ".dsd"
+            ).any { path.endsWith(it, true) }
             if (isOnlineStream) {
                 // Audio-only playback has no video track to open, so no :no-video option is
                 // needed. A short cache plus HTTP reconnect starts the song faster and survives a
@@ -661,67 +681,54 @@ class LibVlcController(
                     media.addOption(":rtsp-pwd=$password")
                 }
             } else {
-                val isAudioOnly = path.endsWith(".mp3", true) || path.endsWith(".flac", true) ||
-                    path.endsWith(".wav", true) || path.endsWith(".ogg", true) ||
-                    path.endsWith(".m4a", true) || path.endsWith(".aac", true) ||
-                    path.endsWith(".opus", true) || path.endsWith(".wma", true) ||
-                    path.endsWith(".alac", true) || path.endsWith(".dsd", true)
-                if (isAudioOnly) {
+                if (isLocalAudioFile) {
                     media.addOption(":no-video")
-                    // 150ms starved the AudioTrack on larger local files: output started, the
-                    // cache emptied and the sound dipped before it recovered. Seek never dipped
-                    // because the cache was already warm.
-                    media.addOption(":file-caching=${abConfig.fileCachingMs}")
-                } else {
-                    media.addOption(":file-caching=${abConfig.fileCachingMs}")
                 }
-                media.addOption(":network-caching=1000")
-            }
-            // Subtitles are off unless this viewer already chose a track for this playback.
-            if (userSelectedSubtitleTrackId >= 0) {
-                media.addOption(":sub-track=$userSelectedSubtitleTrackId")
-            } else {
-                media.addOption(":sub-track=-1")
-            }
-            // Multichannel soundtracks (AC-3, E-AC-3, DTS, TrueHD) are decoded in software and
-            // must be folded into the stereo track this device actually plays. Some 5.1 mixes
-            // drop the centre channel without an explicit stereo target, so dialogue vanishes.
-            // HDMI outputs keep their native layout, everything else is downmixed to stereo.
-            if (!hasMultichannelOutput()) {
-                media.addOption(":audio-channels=2")
-            }
-            // The audio session id is supplied as a global libVLC option (see initLibVLC):
-            // per-media it is ignored by VLC's private audiotrack option, which left our
-            // AudioEffects attached to a session with no audio flowing through it.
-            val prefs = PreferencesManager(context)
-            val hwMode = prefs.getVideoHwDecoder()
-            val (hwEnabled, forceHW) = when (hwMode) {
-                "FORCE_HW" -> Pair(true, true)
-                "SOFTWARE" -> Pair(false, false)
-                else -> Pair(true, true)
-            }
-            // Never force MediaCodec on audio-only files: vendor hardware MP3 decoders drop
-            // frames on high-bitrate streams, which sounds like a stop/start in the middle of
-            // the song. Software audio decoding is glitch-free and cheap.
-            val isLocalAudioFile = !isOnlineStream && listOf(
-                ".mp3", ".flac", ".wav", ".ogg", ".m4a", ".aac", ".opus", ".wma", ".alac", ".dsd"
-            ).any { path.endsWith(it, true) }
-            media.setHWDecoderEnabled(hwEnabled, forceHW && !isLocalAudioFile)
-            val deint = prefs.getVideoDeinterlaceMode()
-            when (deint) {
-                "YADIF" -> {
-                    media.addOption(":deinterlace=1")
-                    media.addOption(":deinterlace-mode=yadif")
-                }
-                "BLEND" -> {
-                    media.addOption(":deinterlace=1")
-                    media.addOption(":deinterlace-mode=blend")
-                }
-                "OFF" -> {
-                    media.addOption(":deinterlace=0")
-                }
+                // 150ms starved the AudioTrack on larger local files: output started, the
+                // cache emptied and the sound dipped before it recovered. Seek never dipped
+                // because the cache was already warm.
+                media.addOption(":file-caching=${abConfig.fileCachingMs}")
             }
             if (isVideoFlow) {
+                // Subtitles are off unless this viewer already chose a track for this playback.
+                if (userSelectedSubtitleTrackId >= 0) {
+                    media.addOption(":sub-track=$userSelectedSubtitleTrackId")
+                } else {
+                    media.addOption(":sub-track=-1")
+                }
+                // Multichannel soundtracks (AC-3, E-AC-3, DTS, TrueHD) are decoded in software and
+                // must be folded into the stereo track this device actually plays. Some 5.1 mixes
+                // drop the centre channel without an explicit stereo target, so dialogue vanishes.
+                // HDMI outputs keep their native layout, everything else is downmixed to stereo.
+                if (!hasMultichannelOutput()) {
+                    media.addOption(":audio-channels=2")
+                }
+                val prefs = PreferencesManager(context)
+                val hwMode = prefs.getVideoHwDecoder()
+                val (hwEnabled, forceHW) = when (hwMode) {
+                    "FORCE_HW" -> Pair(true, true)
+                    "SOFTWARE" -> Pair(false, false)
+                    else -> Pair(true, true)
+                }
+                if (isLocalAudioFile) {
+                    media.setHWDecoderEnabled(false, false)
+                } else {
+                    media.setHWDecoderEnabled(hwEnabled, forceHW)
+                }
+                val deint = prefs.getVideoDeinterlaceMode()
+                when (deint) {
+                    "YADIF" -> {
+                        media.addOption(":deinterlace=1")
+                        media.addOption(":deinterlace-mode=yadif")
+                    }
+                    "BLEND" -> {
+                        media.addOption(":deinterlace=1")
+                        media.addOption(":deinterlace-mode=blend")
+                    }
+                    "OFF" -> {
+                        media.addOption(":deinterlace=0")
+                    }
+                }
                 // The display picture profile and the 32-bit colour option were stored by the video
                 // settings screen but never reached the decoder. Media options are applied per file,
                 // so a profile change is picked up by the next video (and never by music playback).
@@ -744,13 +751,23 @@ class LibVlcController(
                 if (prefs.isVideoHighColorQuality()) {
                     media.addOption(":android-display-chroma=RV32")
                 }
+            } else {
+                // Keep MediaCodec disabled for music playback: probing vendor hardware audio
+                // decoders before falling back to software causes a startup click on local tracks.
+                media.setHWDecoderEnabled(false, false)
             }
             mediaPlayer?.apply {
                 setEventListener(null)
                 this.media = media
                 media.release()
+                currentPfd = newPfd
+                if (previousPfd != null && previousPfd !== newPfd) {
+                    try { previousPfd.close() } catch (_: Exception) {}
+                }
                 setEventListener(playerEventListener)
-                volume = lastRequestedVolume
+                if (lastRequestedVolume != 100) {
+                    volume = lastRequestedVolume
+                }
                 if (currentPlaybackSpeed != 1.0f) {
                     rate = currentPlaybackSpeed
                 }
@@ -802,6 +819,9 @@ class LibVlcController(
                 }
             }
         } catch (e: Exception) {
+            if (newPfd != null && newPfd !== currentPfd) {
+                try { newPfd.close() } catch (_: Exception) {}
+            }
             e.printStackTrace()
             val err = "Cannot play this media: ${e.localizedMessage ?: "Playback error"}"
             reportError(err)
