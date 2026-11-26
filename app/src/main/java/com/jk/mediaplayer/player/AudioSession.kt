@@ -84,6 +84,9 @@ object AudioSession {
      */
     fun openSystemEqualizer(activity: Activity, onFallback: () -> Unit = {}) {
         val sessionId = id(activity)
+        // The session is only announced when the user asks for effects: an automatic broadcast at
+        // every start made OEM speaker DSPs attach mid-stream, which was heard as a click.
+        open(activity)
         val intent = Intent(AudioEffect.ACTION_DISPLAY_AUDIO_EFFECT_CONTROL_PANEL).apply {
             putExtra(AudioEffect.EXTRA_AUDIO_SESSION, sessionId)
             putExtra(AudioEffect.EXTRA_PACKAGE_NAME, activity.packageName)

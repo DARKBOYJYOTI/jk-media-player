@@ -479,7 +479,6 @@ class AudioPlayerService : Service() {
         resumeOnFocusGain = false
         playerController?.resetProgress()
         requestAudioFocus()
-        AudioSession.open(this)
         playerController?.playMedia(url, streamUri, 0L, username, password)
         updateTrackMetadataAndNotification(streamItem, isPlaying = true)
     }
@@ -520,7 +519,6 @@ class AudioPlayerService : Service() {
                 if (playHistory.size > 120) playHistory.removeFirst()
             }
             requestAudioFocus()
-            AudioSession.open(this)
             _isLoadingRemote.value = true
             remoteRequestToken++
             updateTrackMetadataAndNotification(track, isPlaying = false)
@@ -547,7 +545,6 @@ class AudioPlayerService : Service() {
             if (playHistory.size > 120) playHistory.removeFirst()
         }
         requestAudioFocus()
-        AudioSession.open(this)
         playerController?.playMedia(track.path, track.uri)
         updateTrackMetadataAndNotification(track, isPlaying = true)
 
