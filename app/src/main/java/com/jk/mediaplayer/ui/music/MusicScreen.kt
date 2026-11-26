@@ -960,6 +960,8 @@ fun MusicScreen(
                 },
                 onYouTubePlayNext = onYouTubePlayNext,
                 onYouTubeAddToQueue = onYouTubeAddToQueue,
+                // Leave room for the floating mini player so the last row stays reachable.
+                bottomContentPadding = if (currentTrack != null) 96.dp else 24.dp,
                 onDismiss = { showSearchScreen = false }
             )
         }

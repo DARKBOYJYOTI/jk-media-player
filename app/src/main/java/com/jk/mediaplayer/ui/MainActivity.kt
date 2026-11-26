@@ -729,7 +729,10 @@ fun MusicAppRoot(
             val miniPlayerHeightDp = 66.dp
             val miniPlayerHeightPx = with(density) { miniPlayerHeightDp.toPx() }
             val marginAboveNavBarPx = 0f
-            val collapsedTopOffsetPx = (totalHeightPx - navBarContentHeightPx - navBarsBottomInsetPx - miniPlayerHeightPx - marginAboveNavBarPx).coerceAtLeast(0f)
+            // The search screen covers the bottom navigation, so the card sits lower there
+            // instead of reserving the bar's height as empty space.
+            val bottomReservePx = if (isSearchOpen) 0f else navBarContentHeightPx
+            val collapsedTopOffsetPx = (totalHeightPx - bottomReservePx - navBarsBottomInsetPx - miniPlayerHeightPx - marginAboveNavBarPx).coerceAtLeast(0f)
 
             // One gesture owner for the whole screen. As the ancestor of both the library and
             // the player it joins their hit path instead of covering them, so it never steals a
@@ -804,7 +807,8 @@ fun MusicAppRoot(
                     onTrackClick = { playlist, index, source ->
                         onPlayTrackRequest(playlist, index, source)
                         isPlayerPrewarmed = true
-                        settlePlayer(expand = true)
+                        // Playback starts in the mini card and stays there. The full player opens
+                        // only when the user taps the card.
                     },
                     onPlayNext = { track ->
                         audioService?.playNextInQueue(track)
@@ -907,17 +911,15 @@ fun MusicAppRoot(
                         val clearance = heroTop - bar.bottom - gap
                         return ((clearance - fadeStart) / fadeRange).coerceIn(0f, 1f)
                     }
-                    val isHiddenBySearch by remember {
-                        derivedStateOf { isSearchOpen && playerExpansionProgress.value < 0.05f }
-                    }
-                    val showMiniPlayer by remember {
-                        derivedStateOf { playerExpansionProgress.value < 0.995f }
-                    }
-                    val mountPlayerSheet by remember(isPlayerPrewarmed) {
-                        derivedStateOf { playerExpansionProgress.value > 0.01f || isPlayerPrewarmed }
-                    }
-
-                    if (!isHiddenBySearch) {
+                    // The player window stays composed on the search screen too: a song keeps
+                    // living in the mini card while the user browses, exactly like the music app.
+                    run {
+                        val showMiniPlayer by remember {
+                            derivedStateOf { playerExpansionProgress.value < 0.995f }
+                        }
+                        val mountPlayerSheet by remember(isPlayerPrewarmed) {
+                            derivedStateOf { playerExpansionProgress.value > 0.01f || isPlayerPrewarmed }
+                        }
                         Box(modifier = Modifier.fillMaxSize()) {
 
                                 Box(

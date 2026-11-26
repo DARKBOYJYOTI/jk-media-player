@@ -33,6 +33,7 @@ import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -169,6 +170,7 @@ fun SearchScreen(
     onPlayYouTube: (List<YouTubeTrack>, Int) -> Unit = { _, _ -> },
     onYouTubePlayNext: (YouTubeTrack) -> Unit = {},
     onYouTubeAddToQueue: (YouTubeTrack) -> Unit = {},
+    bottomContentPadding: Dp = 24.dp,
     onDismiss: () -> Unit
 ) {
     BackHandler { onDismiss() }
@@ -178,6 +180,7 @@ fun SearchScreen(
     var ytResults by remember { mutableStateOf<List<YouTubeTrack>>(emptyList()) }
     var ytLoading by remember { mutableStateOf(false) }
     var ytError by remember { mutableStateOf<String?>(null) }
+    var ytQuery by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
@@ -185,22 +188,27 @@ fun SearchScreen(
         focusRequester.requestFocus()
     }
 
-    // Remote search is debounced and only runs while the YT Music chip is selected, so the
-    // local library search stays instant and offline.
+    // Remote search is debounced and runs for the All tab and the YT Music chip, so the local
+    // library search stays instant and offline. Switching between the two reuses the last result.
     LaunchedEffect(searchQuery, selectedFilter) {
-        if (selectedFilter != "YT Music" || searchQuery.trim().length < 2) {
+        val query = searchQuery.trim()
+        val wantsRemote = selectedFilter == "All" || selectedFilter == "YT Music"
+        if (!wantsRemote || query.length < 2) {
             ytResults = emptyList()
             ytError = null
             ytLoading = false
+            ytQuery = ""
             return@LaunchedEffect
         }
+        if (query == ytQuery && ytResults.isNotEmpty()) return@LaunchedEffect
         ytLoading = true
         ytError = null
         delay(400)
-        val found = ytSearch(searchQuery.trim())
+        val found = ytSearch(query)
+        ytQuery = query
         ytResults = found
         ytLoading = false
-        if (found.isEmpty()) ytError = "No YouTube Music results for \"${searchQuery.trim()}\""
+        if (found.isEmpty()) ytError = "No YouTube Music results for \"$query\""
     }
 
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -471,7 +479,8 @@ fun SearchScreen(
                 textColorSecondary = textColorSecondary,
                 onPlay = onPlayYouTube,
                 onPlayNext = onYouTubePlayNext,
-                onAddToQueue = onYouTubeAddToQueue
+                onAddToQueue = onYouTubeAddToQueue,
+                bottomContentPadding = bottomContentPadding
             )
         } else if (searchQuery.isBlank()) {
             // Idle State: suggestions / quick start (Positioned near the top so keyboard never covers it)
@@ -513,7 +522,10 @@ fun SearchScreen(
             }
         } else {
             val totalResults = filteredTracks.size + filteredAlbums.size + filteredArtists.size + filteredFolders.size
-            if (totalResults == 0) {
+            // The All tab also carries a YouTube Music block, so an empty local library is not
+            // "no results" while the remote section has something to show.
+            val hasYouTubeSection = selectedFilter == "All" && (ytLoading || ytResults.isNotEmpty())
+            if (totalResults == 0 && !hasYouTubeSection) {
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
@@ -537,7 +549,7 @@ fun SearchScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    contentPadding = PaddingValues(bottom = 24.dp)
+                    contentPadding = PaddingValues(bottom = bottomContentPadding)
                 ) {
                     // 1. ALL or SONGS
                     if ((selectedFilter == "All" || selectedFilter == "Songs") && filteredTracks.isNotEmpty()) {
@@ -773,6 +785,72 @@ fun SearchScreen(
                             }
                         }
                     }
+
+                    // 5. ALL: YouTube Music block under the local results
+                    if (selectedFilter == "All" && (ytLoading || ytResults.isNotEmpty())) {
+                        item {
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 20.dp, vertical = 10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Text(
+                                    text = "YT Music",
+                                    color = textColorPrimary,
+                                    fontSize = 20.sp,
+                                    fontWeight = FontWeight.SemiBold
+                                )
+                                if (!ytLoading && ytResults.isNotEmpty()) {
+                                    Text(
+                                        text = "See all",
+                                        color = MusicRed,
+                                        fontSize = 13.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(8.dp))
+                                            .clickable { selectedFilter = "YT Music" }
+                                            .padding(4.dp)
+                                    )
+                                }
+                            }
+                        }
+                        if (ytLoading && ytResults.isEmpty()) {
+                            item {
+                                Row(
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .padding(horizontal = 24.dp, vertical = 10.dp),
+                                    verticalAlignment = Alignment.CenterVertically
+                                ) {
+                                    CircularProgressIndicator(
+                                        modifier = Modifier.size(18.dp),
+                                        strokeWidth = 2.dp,
+                                        color = MusicRed
+                                    )
+                                    Spacer(modifier = Modifier.width(12.dp))
+                                    Text(
+                                        text = "Searching YouTube Music…",
+                                        color = textColorSecondary,
+                                        fontSize = 13.sp
+                                    )
+                                }
+                            }
+                        }
+                        val previewCount = minOf(5, ytResults.size)
+                        itemsIndexed(ytResults.take(previewCount)) { index, track ->
+                            YouTubeTrackRow(
+                                track = track,
+                                isDark = isDark,
+                                textColorPrimary = textColorPrimary,
+                                textColorSecondary = textColorSecondary,
+                                onClick = { onPlayYouTube(ytResults, index) },
+                                onPlayNext = { onYouTubePlayNext(track) },
+                                onAddToQueue = { onYouTubeAddToQueue(track) }
+                            )
+                        }
+                    }
                 }
             }
         }
@@ -915,7 +993,8 @@ private fun YouTubeResultsSection(
     textColorSecondary: Color,
     onPlay: (List<YouTubeTrack>, Int) -> Unit,
     onPlayNext: (YouTubeTrack) -> Unit,
-    onAddToQueue: (YouTubeTrack) -> Unit
+    onAddToQueue: (YouTubeTrack) -> Unit,
+    bottomContentPadding: Dp = 24.dp
 ) {
     when {
         query.trim().length < 2 -> {
@@ -989,7 +1068,7 @@ private fun YouTubeResultsSection(
         else -> {
             LazyColumn(
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(bottom = 24.dp)
+                contentPadding = PaddingValues(bottom = bottomContentPadding)
             ) {
                 item {
                     Row(
