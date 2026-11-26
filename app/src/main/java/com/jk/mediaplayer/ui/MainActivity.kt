@@ -804,8 +804,9 @@ fun MusicAppRoot(
                     onTrackClick = { playlist, index, source ->
                         onPlayTrackRequest(playlist, index, source)
                         isPlayerPrewarmed = true
-                        // Playback starts in the mini card and stays there. The full player opens
-                        // only when the user taps the card.
+                        // Playing a song opens the full player; the search screen stays underneath
+                        // and comes back when the sheet is collapsed.
+                        settlePlayer(expand = true)
                     },
                     onPlayNext = { track ->
                         audioService?.playNextInQueue(track)
@@ -850,8 +851,9 @@ fun MusicAppRoot(
                                 index
                             )
                             isPlayerPrewarmed = true
-                            // The search screen stays open, like YouTube Music: playback starts
-                            // in the mini player and the user keeps browsing.
+                            // Same behaviour as a local song: the full player opens, and the search
+                            // screen stays underneath until the sheet is collapsed.
+                            settlePlayer(expand = true)
                         }
                     },
                     onYouTubePlayNext = { track ->

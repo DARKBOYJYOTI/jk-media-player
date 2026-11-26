@@ -594,6 +594,7 @@ class AudioPlayerService : Service() {
                 return@launch
             }
             consecutiveRemoteFailures = 0
+            val startedAt = System.currentTimeMillis()
             playerController?.playMedia(
                 path = resolved.url,
                 uri = Uri.parse(resolved.url),
@@ -602,10 +603,14 @@ class AudioPlayerService : Service() {
             )
             updateTrackMetadataAndNotification(track, isPlaying = true)
             prefetchNextRemoteTrack()
-            // Keep the spinner until the engine reports its first playable frame, so the user
-            // sees progress through the network open instead of a dead pause button.
+            // Keep the spinner until audio really starts, so the user sees progress through the
+            // network open instead of a dead pause button.
             scope.launch {
-                playerController?.isBuffering?.first { !it }
+                playerController?.isPlaying?.first { it }
+                Log.i(
+                    "AudioPlayerService",
+                    "remote playback started in ${System.currentTimeMillis() - startedAt}ms"
+                )
                 if (requestToken == remoteRequestToken) {
                     _isLoadingRemote.value = false
                 }

@@ -130,6 +130,7 @@ object YouTubeMusic {
             }
             try {
                 ensureInitialized()
+                val resolveStart = System.currentTimeMillis()
                 val linkHandler = YoutubeStreamLinkHandlerFactory.getInstance()
                     .fromUrl("https://www.youtube.com/watch?v=$videoId")
                 val extractor = YoutubeStreamExtractor(
@@ -152,8 +153,16 @@ object YouTubeMusic {
                 // videos only work on a lower bitrate format. Probe until one really responds.
                 for (candidate in candidates.take(MAX_STREAM_CANDIDATES)) {
                     if (isReachable(candidate)) {
-                        val resolved = ResolvedStream(candidate, STREAM_USER_AGENT)
+                        // Play the URL with the user agent the extractor used: googlevideo ties
+                        // the signature to it, and a mismatch is throttled or rejected.
+                        val userAgent = YouTubeDownloader.rememberedUserAgent() ?: STREAM_USER_AGENT
+                        val resolved = ResolvedStream(candidate, userAgent)
                         streamCache[videoId] = CachedStream(resolved, now + STREAM_CACHE_TTL_MS)
+                        Log.i(
+                            TAG,
+                            "resolved $videoId in ${System.currentTimeMillis() - resolveStart}ms " +
+                                "(${candidates.size} candidates)"
+                        )
                         return@withContext resolved
                     }
                 }
@@ -228,6 +237,13 @@ object YouTubeMusic {
     /** Cover URL that always exists for a video id, used when the search result has none. */
     fun thumbnailFallback(videoId: String): String =
         "https://i.ytimg.com/vi/$videoId/hqdefault.jpg"
+
+    /**
+     * Artwork for a queue entry that arrived without a URL. The path carries the video id, so a
+     * playable thumbnail can always be rebuilt. Local files return null.
+     */
+    fun artworkFallbackFor(path: String): String? =
+        videoIdOf(path)?.let(::thumbnailFallback)
 
     /**
      * YouTube Music serves square cover art from the googleusercontent CDN with the size baked

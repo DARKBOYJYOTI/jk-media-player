@@ -39,6 +39,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.jk.mediaplayer.R
+import com.jk.mediaplayer.data.YouTubeMusic
 import com.jk.mediaplayer.data.YouTubeTrack
 import com.jk.mediaplayer.model.AlbumItem
 import com.jk.mediaplayer.model.ArtistItem
@@ -1122,10 +1123,16 @@ private fun YouTubeTrackRow(
     onAddToQueue: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    var useFallbackArt by remember(track.videoId) { mutableStateOf(false) }
     val context = androidx.compose.ui.platform.LocalContext.current
-    val artRequest = remember(track.videoId, track.thumbnailUrl) {
+    val artRequest = remember(track.videoId, track.thumbnailUrl, useFallbackArt) {
+        val url = if (useFallbackArt) {
+            YouTubeMusic.thumbnailFallback(track.videoId)
+        } else {
+            track.thumbnailUrl
+        }
         ImageRequest.Builder(context)
-            .data(track.thumbnailUrl)
+            .data(url)
             .crossfade(true)
             .error(R.drawable.ic_default_album_art)
             .placeholder(R.drawable.ic_default_album_art)
@@ -1149,7 +1156,12 @@ private fun YouTubeTrackRow(
                 model = artRequest,
                 contentDescription = track.title,
                 modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
+                contentScale = ContentScale.Crop,
+                onError = {
+                    // The music CDN occasionally rejects an upgraded size; retry the guaranteed
+                    // YouTube frame before giving up and showing the default cover.
+                    if (!useFallbackArt) useFallbackArt = true
+                }
             )
         }
 

@@ -945,8 +945,9 @@ fun MusicScreen(
                 currentTrack = currentTrack,
                 isPlaying = isPlaying,
                 onTrackClick = { list, idx ->
+                    // The player opens above the search screen; the search view stays alive and
+                    // returns when the sheet collapses.
                     onTrackClick(list, idx, "Search")
-                    showSearchScreen = false
                 },
                 onAlbumClick = { album ->
                     selectedAlbum = album

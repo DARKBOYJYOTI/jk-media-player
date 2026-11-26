@@ -45,7 +45,8 @@ class AudioAlbumArtInterceptor(private val context: Context) : Interceptor {
             }
 
             val resolved = resolveArtwork(
-                knownPath = data.onlineArtUrl,
+                knownPath = data.onlineArtUrl
+                    ?: com.jk.mediaplayer.data.YouTubeMusic.artworkFallbackFor(data.path),
                 artist = data.artist,
                 album = data.album,
                 title = data.title

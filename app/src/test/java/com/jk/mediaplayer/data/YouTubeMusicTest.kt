@@ -85,4 +85,13 @@ class YouTubeMusicTest {
             YouTubeMusic.upgradeArtwork("https://lh3.googleusercontent.com/cover=s120-c")
         )
     }
+
+    @Test
+    fun `artwork fallback is rebuilt from a remote path`() {
+        assertEquals(
+            "https://i.ytimg.com/vi/abc/hqdefault.jpg",
+            YouTubeMusic.artworkFallbackFor("ytm:abc")
+        )
+        assertNull(YouTubeMusic.artworkFallbackFor("/storage/emulated/0/Music/a.mp3"))
+    }
 }
