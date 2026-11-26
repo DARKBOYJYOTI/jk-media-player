@@ -116,13 +116,10 @@ class LibVlcController(
     private var pendingPause: Boolean = false
     /** Bumped whenever playback state changes, so a stale pause fade cannot touch new media. */
     private var pauseGeneration: Long = 0L
-    /** Music crossfades softly; video starts and stops instantly. */
-    private val musicFadeInMs: Long = if (isVideoFlow) 0L else TEST_DISABLED_FADE_MS
-    private val musicFadeOutMs: Long = if (isVideoFlow) 0L else TEST_DISABLED_FADE_MS
-    private companion object {
-        /** Temporary A/B switch while isolating the speaker click. */
-        const val TEST_DISABLED_FADE_MS = 0L
-    }
+    /** Music crossfades softly; video starts and stops instantly.
+     *  Temporarily disabled (A/B) while isolating the speaker click. */
+    private val musicFadeInMs: Long = 0L
+    private val musicFadeOutMs: Long = 0L
     private var targetAudioSessionId: Int = 0
 
     private var bufferingJob: kotlinx.coroutines.Job? = null
