@@ -310,42 +310,56 @@ class AudioPlayerService : Service() {
     private var hasAudioFocus = false
     private var resumeOnFocusGain = false
     private var lastPlayStartTime = 0L
+    private val STARTUP_FOCUS_GRACE_MS = 6_000L
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
         logAudioState("focus=$focusChange")
+        val msSinceStart = System.currentTimeMillis() - lastPlayStartTime
+        // Vendor ROMs and Bluetooth route changes send a transient loss or duck while the media
+        // notification/artwork is rebuilt. Acting on it is heard as the song stopping and starting
+        // again, so the whole startup window is left alone.
+        val withinStartupGrace = msSinceStart < STARTUP_FOCUS_GRACE_MS
         when (focusChange) {
             AudioManager.AUDIOFOCUS_LOSS -> {
                 hasAudioFocus = false
                 resumeOnFocusGain = false
-                playerController?.mediaPlayer?.pause()
+                playerController?.pause()
+                publishPausedByFocus()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                val timeSinceStart = System.currentTimeMillis() - lastPlayStartTime
-                // Vendor ROMs send a transient loss while the media notification/artwork is being
-                // rebuilt. Pausing there is heard as the song stopping and starting again, so the
-                // window covers the whole startup phase.
-                if (timeSinceStart < 4000L) {
-                    logAudioState("ignored transient focus loss ${timeSinceStart}ms after start")
+                if (withinStartupGrace) {
+                    logAudioState("ignored transient focus loss ${msSinceStart}ms after start")
                     return@OnAudioFocusChangeListener
                 }
                 hasAudioFocus = false
-                val wasPlaying = playerController?.mediaPlayer?.isPlaying == true
+                val wasPlaying = playerController?.isPlaying?.value == true
                 resumeOnFocusGain = wasPlaying
-                playerController?.mediaPlayer?.pause()
+                playerController?.pause()
+                if (wasPlaying) publishPausedByFocus()
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                // Ramped ducking: snapping the level makes the AudioTrack output an audible click.
-                playerController?.rampVolume(40, 120L)
+                // A duck is not a pause: keep the track running and only dip the level a little.
+                if (withinStartupGrace) {
+                    logAudioState("ignored duck ${msSinceStart}ms after start")
+                    return@OnAudioFocusChangeListener
+                }
+                playerController?.rampVolume(70, 120L)
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
                 hasAudioFocus = true
-                playerController?.rampVolume(vlcVolume.value, 140L)
+                playerController?.rampVolume(vlcVolume.value, 80L)
                 if (resumeOnFocusGain) {
                     resumeOnFocusGain = false
                     playerController?.play()
                 }
             }
         }
+    }
+
+    /** Keeps QS and the notification in step when audio focus, not the user, paused playback. */
+    private fun publishPausedByFocus() {
+        updatePlaybackState(false)
+        _currentTrack.value?.let { showNotification(it, false, currentArtBitmap) }
     }
 
     private var audioFocusRequest: android.media.AudioFocusRequest? = null
@@ -363,6 +377,7 @@ class AudioPlayerService : Service() {
                         .setContentType(android.media.AudioAttributes.CONTENT_TYPE_MUSIC)
                         .build()
                 )
+                .setWillPauseWhenDucked(false)
                 .setOnAudioFocusChangeListener(audioFocusChangeListener)
                 .build()
                 .also { audioFocusRequest = it }
@@ -1013,7 +1028,10 @@ class AudioPlayerService : Service() {
         val am = audioManager ?: (getSystemService(Context.AUDIO_SERVICE) as AudioManager).also { audioManager = it }
         Log.i(
             AUDIO_DIAG_TAG,
-            "$event playing=${playerController?.isPlaying?.value} vlcVolume=${playerController?.getVolume()} " +
+            "$event playing=${playerController?.isPlaying?.value} " +
+                "buffering=${playerController?.isBuffering?.value} " +
+                "track=${_currentTrack.value?.title} " +
+                "vlcVolume=${playerController?.getVolume()} " +
                 "musicVolume=${am.getStreamVolume(AudioManager.STREAM_MUSIC)}/${am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)} " +
                 "focusHeld=$hasAudioFocus resumeOnGain=$resumeOnFocusGain"
         )
