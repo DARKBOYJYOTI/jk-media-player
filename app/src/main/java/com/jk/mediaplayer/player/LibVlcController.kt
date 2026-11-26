@@ -116,6 +116,9 @@ class LibVlcController(
     private var pendingPause: Boolean = false
     /** Bumped whenever playback state changes, so a stale pause fade cannot touch new media. */
     private var pauseGeneration: Long = 0L
+    /** Music crossfades softly; video starts and stops instantly. */
+    private val musicFadeInMs: Long = if (isVideoFlow) 0L else 300L
+    private val musicFadeOutMs: Long = if (isVideoFlow) 0L else 220L
     private var targetAudioSessionId: Int = 0
 
     private var bufferingJob: kotlinx.coroutines.Job? = null
@@ -790,16 +793,18 @@ class LibVlcController(
             }
             player.time = 0L
         }
-        // Start from silence and ramp up: jumping straight from 0 to the user volume makes the
-        // freshly started AudioTrack output a click.
+        // Music fades in; video keeps its instant start so the first frame is not silent.
         val logical = lastRequestedVolume
-        try { player.volume = 0 } catch (_: Throwable) {}
+        val fadeIn = musicFadeInMs
+        try { player.volume = if (fadeIn > 0L) 0 else logical } catch (_: Throwable) {}
         player.play()
         if (attachedLayout != null) {
             applyResizeMode()
         }
-        volumeRampJob = progressScope.launch {
-            rampVolumeInternal(0, logical, 40L)
+        if (fadeIn > 0L) {
+            volumeRampJob = progressScope.launch {
+                rampVolumeInternal(0, logical, fadeIn)
+            }
         }
     }
 
@@ -812,7 +817,7 @@ class LibVlcController(
         val generation = pauseGeneration
         volumeRampJob = progressScope.launch {
             val start = currentPlayerVolume(lastRequestedVolume)
-            rampVolumeInternal(start, 0, 60L)
+            rampVolumeInternal(start, 0, musicFadeOutMs.coerceAtLeast(1L))
             // A new track started while this fade was running: leave its audio alone.
             if (!pendingPause || generation != pauseGeneration) return@launch
             try { player.pause() } catch (_: Throwable) {}
@@ -857,6 +862,27 @@ class LibVlcController(
     private fun cancelVolumeRamp() {
         volumeRampJob?.cancel()
         volumeRampJob = null
+    }
+
+    /** Fade the current audio out before stopping it, used when a new track takes over. */
+    fun stopWithFade() {
+        val player = mediaPlayer ?: return
+        if (!player.isPlaying) {
+            stop()
+            return
+        }
+        pauseGeneration++
+        val generation = pauseGeneration
+        cancelVolumeRamp()
+        pendingPause = true
+        volumeRampJob = progressScope.launch {
+            rampVolumeInternal(currentPlayerVolume(lastRequestedVolume), 0, musicFadeOutMs.coerceAtLeast(1L))
+            if (generation != pauseGeneration) return@launch
+            try { player.stop() } catch (_: Throwable) {}
+            try { player.volume = lastRequestedVolume } catch (_: Throwable) {}
+            pendingPause = false
+            _isPlaying.value = false
+        }
     }
 
     fun stop() {
