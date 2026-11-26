@@ -151,7 +151,10 @@ fun MusicScreen(
     targetArtistToOpen: String? = null,
     targetAlbumToOpen: String? = null,
     onResetTargetArtistAlbum: () -> Unit = {},
-    playerExpansionProgress: () -> Float = { 0f }
+    playerExpansionProgress: () -> Float = { 0f },
+    onPlayYouTube: (List<com.jk.mediaplayer.data.YouTubeTrack>, Int) -> Unit = { _, _ -> },
+    onYouTubePlayNext: (com.jk.mediaplayer.data.YouTubeTrack) -> Unit = {},
+    onYouTubeAddToQueue: (com.jk.mediaplayer.data.YouTubeTrack) -> Unit = {}
 ) {
     val smartTrackClick: (List<AudioItem>, Int, String?) -> Unit = { list, index, source ->
         val clickedTrack = list.getOrNull(index)
@@ -951,6 +954,12 @@ fun MusicScreen(
                 onOpenRingtoneCutter = { ringtoneCutterTrack = it },
                 onDeleteTrack = onDeleteTrack,
                 onBlacklistTrack = { blacklistConfirmTrack = it },
+                ytSearch = { query -> com.jk.mediaplayer.data.YouTubeMusic.search(query) },
+                onPlayYouTube = { results, index ->
+                    onPlayYouTube(results, index)
+                },
+                onYouTubePlayNext = onYouTubePlayNext,
+                onYouTubeAddToQueue = onYouTubeAddToQueue,
                 onDismiss = { showSearchScreen = false }
             )
         }

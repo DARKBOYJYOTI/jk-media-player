@@ -1,0 +1,107 @@
+name: Dev build
+
+# Debug and release APKs for every ABI, built from the dev branch.
+# Nothing is published: no GitHub release, no tag, no signing secrets. The release APKs are
+# signed with the debug key so they install for testing, and stay on the run page only.
+on:
+  push:
+    branches: [dev]
+  workflow_dispatch:
+
+concurrency:
+  group: dev-build-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build all ABIs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Unit tests
+        run: ./gradlew --no-daemon testDebugUnitTest
+
+      - name: Build debug APKs
+        run: ./gradlew --no-daemon assembleDebug
+
+      - name: Build release APKs
+        run: ./gradlew --no-daemon assembleRelease
+
+      # One artifact per ABI per variant so a device only downloads its own APK.
+      - name: Upload debug armeabi-v7a
+        uses: actions/upload-artifact@v4
+        with:
+          name: jk-debug-armeabi-v7a
+          path: app/build/outputs/apk/debug/app-armeabi-v7a-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload debug arm64-v8a
+        uses: actions/upload-artifact@v4
+        with:
+          name: jk-debug-arm64-v8a
+          path: app/build/outputs/apk/debug/app-arm64-v8a-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload debug x86
+        uses: actions/upload-artifact@v4
+        with:
+          name: jk-debug-x86
+          path: app/build/outputs/apk/debug/app-x86-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload debug x86_64
+        uses: actions/upload-artifact@v4
+        with:
+          name: jk-debug-x86_64
+          path: app/build/outputs/apk/debug/app-x86_64-debug.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release armeabi-v7a
+        uses: actions/upload-artifact@v4
+        with:
+          name: jk-release-armeabi-v7a
+          path: app/build/outputs/apk/release/app-armeabi-v7a-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release arm64-v8a
+        uses: actions/upload-artifact@v4
+        with:
+          name: jk-release-arm64-v8a
+          path: app/build/outputs/apk/release/app-arm64-v8a-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release x86
+        uses: actions/upload-artifact@v4
+        with:
+          name: jk-release-x86
+          path: app/build/outputs/apk/release/app-x86-release.apk
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload release x86_64
+        uses: actions/upload-artifact@v4
+        with:
+          name: jk-release-x86_64
+          path: app/build/outputs/apk/release/app-x86_64-release.apk
+          if-no-files-found: error
+          retention-days: 14

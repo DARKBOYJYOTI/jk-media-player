@@ -169,6 +169,7 @@ fun NowPlayingSheet(
     onSeekTo: (Long) -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
+    isLoadingRemote: Boolean = false,
     playlist: List<AudioItem> = emptyList(),
     playbackSource: String = "All Songs",
     repeatMode: Int = 0,
@@ -258,8 +259,10 @@ fun NowPlayingSheet(
     var isLoadingLyrics by remember(track.id) { mutableStateOf(false) }
 
     LaunchedEffect(track.id) {
-        // Fetch online artwork if local artwork is absent or invalid
-        if ((onlineArtUrl.isNullOrEmpty() || onlineArtUrl == track.onlineArtUrl) && !AlbumArtColorExtractor.hasValidLocalAlbumArt(context, track)) {
+        // A track that already carries artwork keeps it. YouTube Music results arrive with a
+        // real thumbnail, and an iTunes lookup keyed on the channel name used to overwrite it
+        // with null, which is why the big player showed the default cover.
+        if (onlineArtUrl.isNullOrEmpty() && !AlbumArtColorExtractor.hasValidLocalAlbumArt(context, track)) {
             val cached = OnlineMetadataFetcher.getCachedAlbumArtUrl(context, track.artist, track.album, track.title)
             if (cached != null) {
                 onlineArtUrl = cached
@@ -954,13 +957,14 @@ fun NowPlayingSheet(
                         // Every page resolves its own artwork. Before this, neighbour pages used
                         // the currently playing track's online art, so a swipe could show the
                         // wrong cover for a moment.
-                        var pageOnlineArt by remember(pageTrack.id, pageTrack.albumArtUri) {
-                            mutableStateOf(if (pageTrack.id == track.id) onlineArtUrl else null)
+                        var pageOnlineArt by remember(pageTrack.id, pageTrack.albumArtUri, pageTrack.onlineArtUrl) {
+                            mutableStateOf(pageTrack.onlineArtUrl)
                         }
-                        LaunchedEffect(pageTrack.id, pageTrack.albumArtUri) {
+                        LaunchedEffect(pageTrack.id, pageTrack.albumArtUri, pageTrack.onlineArtUrl) {
                             pageOnlineArt = when {
+                                !pageTrack.onlineArtUrl.isNullOrBlank() -> pageTrack.onlineArtUrl
+                                pageTrack.id == track.id && !onlineArtUrl.isNullOrBlank() -> onlineArtUrl
                                 AlbumArtColorExtractor.hasValidLocalAlbumArt(context, pageTrack) -> null
-                                pageTrack.id == track.id && onlineArtUrl != null -> onlineArtUrl
                                 else -> {
                                     val cached = OnlineMetadataFetcher.getCachedAlbumArtUrl(context, pageTrack.artist, pageTrack.album, pageTrack.title)
                                     cached ?: OnlineMetadataFetcher.fetchAlbumArtUrl(context, pageTrack.artist, pageTrack.album, pageTrack.title)
@@ -1047,6 +1051,23 @@ fun NowPlayingSheet(
                                         )
                                     }
                                 )
+
+                                // Stream resolve / buffer overlay: the artwork keeps its colour and
+                                // gains a spinner so the song never looks frozen before playback.
+                                if (isCurrentPage && isLoadingRemote) {
+                                    Box(
+                                        modifier = Modifier
+                                            .fillMaxSize()
+                                            .background(Color.Black.copy(alpha = 0.40f)),
+                                        contentAlignment = Alignment.Center
+                                    ) {
+                                        CircularProgressIndicator(
+                                            color = Color.White,
+                                            strokeWidth = 2.5.dp,
+                                            modifier = Modifier.size(34.dp)
+                                        )
+                                    }
+                                }
 
                                 // Visual Seek Badge Feedback Overlay
                                 if (isCurrentPage && seekFeedbackText != null) {
@@ -1355,12 +1376,20 @@ fun NowPlayingSheet(
                         .clickable(onClick = onTogglePlayPause),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                        contentDescription = "Play/Pause",
-                        tint = if (isDark) Color.Black else Color.White,
-                        modifier = Modifier.size(40.dp)
-                    )
+                    if (isLoadingRemote) {
+                        CircularProgressIndicator(
+                            color = if (isDark) Color.Black else Color.White,
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(34.dp)
+                        )
+                    } else {
+                        Icon(
+                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                            contentDescription = "Play/Pause",
+                            tint = if (isDark) Color.Black else Color.White,
+                            modifier = Modifier.size(40.dp)
+                        )
+                    }
                 }
 
                 SeekHoldButton(
@@ -1589,12 +1618,20 @@ fun NowPlayingSheet(
                             .clickable(onClick = onTogglePlayPause)
                     ) {
                         Box(contentAlignment = Alignment.Center) {
-                            Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = "Play/Pause",
-                                tint = if (isDark) Color.Black else Color.White,
-                                modifier = Modifier.size(30.dp)
-                            )
+                            if (isLoadingRemote) {
+                                CircularProgressIndicator(
+                                    color = if (isDark) Color.Black else Color.White,
+                                    strokeWidth = 2.5.dp,
+                                    modifier = Modifier.size(26.dp)
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = "Play/Pause",
+                                    tint = if (isDark) Color.Black else Color.White,
+                                    modifier = Modifier.size(30.dp)
+                                )
+                            }
                         }
                     }
                     IconButton(onClick = onNext, modifier = Modifier.size(36.dp)) {

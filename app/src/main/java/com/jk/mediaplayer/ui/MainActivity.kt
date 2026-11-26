@@ -680,6 +680,11 @@ fun MusicAppRoot(
     val isShuffle by audioService?.isShuffle?.collectAsState() ?: remember { mutableStateOf(false) }
     val favoriteTrackIds by audioService?.favoriteTrackIds?.collectAsState() ?: remember { mutableStateOf(emptySet<String>()) }
     val playbackSource by audioService?.playbackSource?.collectAsState() ?: remember { mutableStateOf("All Songs") }
+    val isLoadingRemote by audioService?.isLoadingRemote?.collectAsState() ?: remember { mutableStateOf(false) }
+    val engineBuffering by audioService?.playerController?.isBuffering?.collectAsState() ?: remember { mutableStateOf(false) }
+    // One flag for the UI: resolving a YouTube stream and buffering an already playing one look
+    // identical to the user, but a paused or never-started engine must not show a spinner.
+    val isPlayerLoading = isLoadingRemote || (engineBuffering && isPlaying)
     var targetArtistToOpen by remember { mutableStateOf<String?>(null) }
     var targetAlbumToOpen by remember { mutableStateOf<String?>(null) }
     // Repeat all / shuffle keep both skips usable. With repeat off the first item has no previous
@@ -836,6 +841,23 @@ fun MusicAppRoot(
                             }
                             context.startActivity(playIntent)
                         }
+                    },
+                    onPlayYouTube = { results, index ->
+                        if (results.isNotEmpty()) {
+                            audioService?.playYouTubeQueue(
+                                results.map { com.jk.mediaplayer.data.YouTubeMusic.toAudioItem(it) },
+                                index
+                            )
+                            isPlayerPrewarmed = true
+                            // The search screen stays open, like YouTube Music: playback starts
+                            // in the mini player and the user keeps browsing.
+                        }
+                    },
+                    onYouTubePlayNext = { track ->
+                        audioService?.playNextInQueue(com.jk.mediaplayer.data.YouTubeMusic.toAudioItem(track))
+                    },
+                    onYouTubeAddToQueue = { track ->
+                        audioService?.addToQueue(com.jk.mediaplayer.data.YouTubeMusic.toAudioItem(track))
                     }
                 )
 
@@ -933,6 +955,7 @@ fun MusicAppRoot(
                                             audioService = audioService,
                                             track = activeTrack,
                                             isPlaying = isPlaying,
+                                            isLoadingRemote = isPlayerLoading,
                                             playbackTime = playbackTimeProvider,
                                             totalDurationMs = totalDuration,
                                             playlist = activePlaylist,
@@ -1043,6 +1066,7 @@ fun MusicAppRoot(
                                             miniArtworkAlpha = {
                                                 if (playerExpansionProgress.value > 0.001f) 0f else 1f
                                             },
+                                            isLoading = isPlayerLoading,
                                             modifier = Modifier
                                                 .align(Alignment.TopStart)
                                                 .fillMaxWidth()
@@ -1295,12 +1319,14 @@ private fun NowPlayingHost(
     onDragBlockedChange: (Boolean) -> Unit = {},
     onVolumeBarBoundsChange: (androidx.compose.ui.geometry.Rect?) -> Unit = {},
     onVolumeBarLocalBoundsChange: (androidx.compose.ui.geometry.Rect?) -> Unit = {},
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    isLoadingRemote: Boolean = false
 ) {
     val volume by audioService?.vlcVolume?.collectAsState() ?: remember { mutableIntStateOf(100) }
     NowPlayingSheet(
         track = track,
         isPlaying = isPlaying,
+        isLoadingRemote = isLoadingRemote,
         playbackTime = playbackTime,
         totalDurationMs = totalDurationMs,
         playlist = playlist,

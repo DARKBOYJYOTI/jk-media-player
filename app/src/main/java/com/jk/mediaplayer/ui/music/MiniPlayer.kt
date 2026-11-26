@@ -48,7 +48,8 @@ fun MiniPlayer(
     totalDurationMs: Long = 0L,
     onPrevious: () -> Unit = {},
     canGoNext: Boolean = true,
-    canGoPrevious: Boolean = true
+    canGoPrevious: Boolean = true,
+    isLoading: Boolean = false
 ) {
     MiniPlayerContent(
         track = track,
@@ -61,7 +62,8 @@ fun MiniPlayer(
         totalDurationMs = totalDurationMs,
         onPrevious = onPrevious,
         canGoNext = canGoNext,
-        canGoPrevious = canGoPrevious
+        canGoPrevious = canGoPrevious,
+        isLoading = isLoading
     )
 }
 
@@ -83,7 +85,10 @@ fun MiniPlayerContent(
     // The hero artwork replaces mini artwork immediately when expansion starts.
     miniArtworkAlpha: () -> Float = { 1f },
     // Same resolved tint used by the unified window background.
-    backgroundColor: Color? = null
+    backgroundColor: Color? = null,
+    // True while a YouTube Music stream is being resolved, so the card shows progress
+    // instead of pretending the song is ready to pause.
+    isLoading: Boolean = false
 ) {
     if (track == null) return
 
@@ -139,6 +144,20 @@ fun MiniPlayerContent(
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop
                         )
+                        if (isLoading) {
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxSize()
+                                    .background(Color.Black.copy(alpha = 0.45f)),
+                                contentAlignment = Alignment.Center
+                            ) {
+                                CircularProgressIndicator(
+                                    color = Color.White,
+                                    strokeWidth = 2.dp,
+                                    modifier = Modifier.size(20.dp)
+                                )
+                            }
+                        }
                     }
 
                     Spacer(modifier = Modifier.width(12.dp))
@@ -197,12 +216,20 @@ fun MiniPlayerContent(
                             .size(42.dp)
                             .clip(CircleShape)
                     ) {
-                        Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = "Play/Pause",
-                            tint = textColorPrimary,
-                            modifier = Modifier.size(28.dp)
-                        )
+                        if (isLoading) {
+                            CircularProgressIndicator(
+                                color = textColorPrimary,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(20.dp)
+                            )
+                        } else {
+                            Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = "Play/Pause",
+                                tint = textColorPrimary,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
                     }
 
                     // Next Track Button

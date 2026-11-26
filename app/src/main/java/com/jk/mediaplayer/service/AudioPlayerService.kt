@@ -15,6 +15,7 @@ import android.os.Bundle
 import android.os.PowerManager
 import com.jk.mediaplayer.data.MediaScanner
 import com.jk.mediaplayer.data.PreferencesManager
+import com.jk.mediaplayer.data.YouTubeMusic
 import android.os.Binder
 import android.os.Build
 import android.os.IBinder
@@ -22,6 +23,7 @@ import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.media.MediaMetadataRetriever
 import android.net.Uri
+import android.widget.Toast
 import android.support.v4.media.MediaMetadataCompat
 import android.support.v4.media.session.MediaSessionCompat
 import android.support.v4.media.session.PlaybackStateCompat
@@ -39,6 +41,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import java.io.File
@@ -93,11 +96,22 @@ class AudioPlayerService : Service() {
     private val _playbackSource = MutableStateFlow<String>("All Songs")
     val playbackSource: StateFlow<String> = _playbackSource.asStateFlow()
 
+    /**
+     * True while a YouTube Music entry is being resolved into a playable stream.
+     * The UI shows a spinner on the artwork during this window instead of a dead play button.
+     */
+    private val _isLoadingRemote = MutableStateFlow(false)
+    val isLoadingRemote: StateFlow<Boolean> = _isLoadingRemote.asStateFlow()
+
 
     private val _favoriteTrackIds = MutableStateFlow<Set<String>>(emptySet())
     val favoriteTrackIds: StateFlow<Set<String>> = _favoriteTrackIds.asStateFlow()
 
     private var currentIndex = 0
+    /** Guards against a slow YouTube resolve starting playback after the user moved on. */
+    private var remoteRequestToken = 0L
+    /** Stops a run of failed resolves from skipping through the whole queue in a loop. */
+    private var consecutiveRemoteFailures = 0
 
     /** Shuffle "previous" needs real history, random previous is wrong. */
     private val playHistory = ArrayDeque<Int>()
@@ -425,6 +439,7 @@ class AudioPlayerService : Service() {
     }
 
     fun playStream(url: String, username: String? = null, password: String? = null) {
+        _isLoadingRemote.value = false
         val streamUri = Uri.parse(url)
         val host = streamUri.host ?: "Online Stream"
         val title = streamUri.lastPathSegment?.substringBeforeLast('.') ?: host
@@ -450,6 +465,20 @@ class AudioPlayerService : Service() {
         updateTrackMetadataAndNotification(streamItem, isPlaying = true)
     }
 
+    /**
+     * Replace the queue with a YouTube Music result list and start at [startIndex].
+     * The entries travel as ordinary [AudioItem] values, so every existing queue control
+     * (next, previous, reorder, remove, shuffle, repeat) keeps working unchanged.
+     */
+    fun playYouTubeQueue(tracks: List<AudioItem>, startIndex: Int) {
+        if (tracks.isEmpty()) return
+        consecutiveRemoteFailures = 0
+        _playlist.value = tracks
+        currentIndex = startIndex.coerceIn(0, tracks.lastIndex)
+        _playbackSource.value = "YouTube Music"
+        playCurrent()
+    }
+
     private fun playCurrent() {
         acquireWakeLock()
         val tracks = _playlist.value
@@ -458,8 +487,37 @@ class AudioPlayerService : Service() {
         _currentTrack.value = track
         lastPlayStartTime = System.currentTimeMillis()
         logAudioState("playCurrent track=${track.id}")
+
+        val remoteVideoId = YouTubeMusic.videoIdOf(track.path)
+        if (remoteVideoId != null) {
+            // Remote entries have no durable local identity, so they stay out of the play
+            // history and the saved session. The queue comes back from a new search instead.
+            resumeOnFocusGain = false
+            playerController?.resetProgress()
+            // Silence the previous track immediately. Leaving it audible while the new stream is
+            // resolved is what made the old song keep playing under the new title.
+            playerController?.stop()
+            if (playHistory.lastOrNull() != currentIndex) {
+                playHistory.addLast(currentIndex)
+                if (playHistory.size > 120) playHistory.removeFirst()
+            }
+            requestAudioFocus()
+            AudioSession.open(this)
+            _isLoadingRemote.value = true
+            remoteRequestToken++
+            updateTrackMetadataAndNotification(track, isPlaying = false)
+            playRemoteTrack(track, remoteVideoId, remoteRequestToken)
+            return
+        }
+
+        remoteRequestToken++
+        _isLoadingRemote.value = false
         prefsManager.recordTrackPlayed(track.id)
-        prefsManager.savePlaybackSession(track.id, tracks.map { it.id }, currentIndex, _playbackSource.value)
+        // Saved sessions replay from the on-device library, so a queue that contains YouTube
+        // entries would restore with holes. Keep the saved session local-only.
+        if (tracks.none { YouTubeMusic.videoIdOf(it.path) != null }) {
+            prefsManager.savePlaybackSession(track.id, tracks.map { it.id }, currentIndex, _playbackSource.value)
+        }
         // This explicit track start supersedes any pending focus-gain resume from old media.
         resumeOnFocusGain = false
         // Clear the previous track's position so the UI never shows a stale time/progress
@@ -500,6 +558,62 @@ class AudioPlayerService : Service() {
                 }
             }
         }
+    }
+
+    /**
+     * Resolve a YouTube Music entry and hand the stream URL to LibVLC.
+     * A failed resolve never leaves the player idle: it reports and advances.
+     */
+    private fun playRemoteTrack(track: AudioItem, videoId: String, requestToken: Long) {
+        scope.launch {
+            val resolved = YouTubeMusic.resolveAudio(videoId)
+            // A newer request, or a different track, always wins over a late resolve.
+            if (requestToken != remoteRequestToken || _currentTrack.value?.id != track.id) return@launch
+            if (resolved == null) {
+                _isLoadingRemote.value = false
+                consecutiveRemoteFailures++
+                Toast.makeText(
+                    this@AudioPlayerService,
+                    if (consecutiveRemoteFailures < 3) {
+                        "Could not play this song. Trying the next one."
+                    } else {
+                        "YouTube Music is not responding. Playback stopped."
+                    },
+                    Toast.LENGTH_SHORT
+                ).show()
+                if (consecutiveRemoteFailures < 3 && _playlist.value.size > 1) {
+                    playNext()
+                } else {
+                    consecutiveRemoteFailures = 0
+                    playerController?.stop()
+                }
+                return@launch
+            }
+            consecutiveRemoteFailures = 0
+            playerController?.playMedia(
+                path = resolved.url,
+                uri = Uri.parse(resolved.url),
+                httpHeaders = mapOf("User-Agent" to resolved.userAgent),
+                audioOnly = true
+            )
+            updateTrackMetadataAndNotification(track, isPlaying = true)
+            prefetchNextRemoteTrack()
+            // Keep the spinner until the engine reports its first playable frame, so the user
+            // sees progress through the network open instead of a dead pause button.
+            scope.launch {
+                playerController?.isBuffering?.first { !it }
+                if (requestToken == remoteRequestToken) {
+                    _isLoadingRemote.value = false
+                }
+            }
+        }
+    }
+
+    /** Warm the next remote URL so a track change does not wait on the network. */
+    private fun prefetchNextRemoteTrack() {
+        val nextTrack = _playlist.value.getOrNull(currentIndex + 1) ?: return
+        val nextVideoId = YouTubeMusic.videoIdOf(nextTrack.path) ?: return
+        scope.launch { YouTubeMusic.resolveAudio(nextVideoId) }
     }
 
     private fun updateTrackMetadataAndNotification(track: AudioItem, isPlaying: Boolean) {
@@ -637,6 +751,8 @@ class AudioPlayerService : Service() {
     private fun onTrackEnded() {
         val tracks = _playlist.value
         if (tracks.isEmpty()) return
+        // A stream that is still resolving must not be advanced by the previous media's end event.
+        if (_isLoadingRemote.value) return
         // Ignore switch-generated end events, but scale the guard for short tracks so their
         // legitimate EndReached event is not discarded by a fixed 1.5 second delay.
         val durationMs = playerController?.totalDuration?.value
@@ -705,6 +821,9 @@ class AudioPlayerService : Service() {
 
     fun addToQueue(track: AudioItem) {
         val list = _playlist.value.toMutableList()
+        // A YouTube result is identified by its video id, so queueing the same song twice is a
+        // no-op. Tapping Add to queue repeatedly should not build a duplicate run.
+        if (YouTubeMusic.videoIdOf(track.path) != null && list.any { it.id == track.id }) return
         list.add(track)
         _playlist.value = list
     }

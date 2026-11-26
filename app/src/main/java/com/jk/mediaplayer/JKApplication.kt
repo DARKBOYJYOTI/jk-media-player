@@ -180,6 +180,7 @@ class JKApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         instance = this
+        com.jk.mediaplayer.data.YouTubeMusic.init(this)
         CoroutineScope(Dispatchers.IO).launch {
             com.jk.mediaplayer.data.MediaScanner.loadPersistedMusic(this@JKApplication)
             VideoThumbnailCache.clearLegacyThumbnails(this@JKApplication)

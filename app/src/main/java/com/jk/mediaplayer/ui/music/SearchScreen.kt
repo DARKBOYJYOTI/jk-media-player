@@ -38,12 +38,14 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import com.jk.mediaplayer.R
+import com.jk.mediaplayer.data.YouTubeTrack
 import com.jk.mediaplayer.model.AlbumItem
 import com.jk.mediaplayer.model.ArtistItem
 import com.jk.mediaplayer.model.AudioFolder
 import com.jk.mediaplayer.model.AudioItem
 import com.jk.mediaplayer.model.formatDuration
 import com.jk.mediaplayer.ui.theme.*
+import kotlinx.coroutines.delay
 
 
 /**
@@ -163,17 +165,42 @@ fun SearchScreen(
     onOpenRingtoneCutter: (AudioItem) -> Unit = {},
     onDeleteTrack: (AudioItem) -> Unit = {},
     onBlacklistTrack: (AudioItem) -> Unit = {},
+    ytSearch: suspend (String) -> List<YouTubeTrack> = { emptyList() },
+    onPlayYouTube: (List<YouTubeTrack>, Int) -> Unit = { _, _ -> },
+    onYouTubePlayNext: (YouTubeTrack) -> Unit = {},
+    onYouTubeAddToQueue: (YouTubeTrack) -> Unit = {},
     onDismiss: () -> Unit
 ) {
     BackHandler { onDismiss() }
 
     var searchQuery by remember { mutableStateOf("") }
     var selectedFilter by remember { mutableStateOf("All") }
+    var ytResults by remember { mutableStateOf<List<YouTubeTrack>>(emptyList()) }
+    var ytLoading by remember { mutableStateOf(false) }
+    var ytError by remember { mutableStateOf<String?>(null) }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
+    }
+
+    // Remote search is debounced and only runs while the YT Music chip is selected, so the
+    // local library search stays instant and offline.
+    LaunchedEffect(searchQuery, selectedFilter) {
+        if (selectedFilter != "YT Music" || searchQuery.trim().length < 2) {
+            ytResults = emptyList()
+            ytError = null
+            ytLoading = false
+            return@LaunchedEffect
+        }
+        ytLoading = true
+        ytError = null
+        delay(400)
+        val found = ytSearch(searchQuery.trim())
+        ytResults = found
+        ytLoading = false
+        if (found.isEmpty()) ytError = "No YouTube Music results for \"${searchQuery.trim()}\""
     }
 
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -403,7 +430,7 @@ fun SearchScreen(
         }
 
         // Category Filter Chips Row
-        val categories = listOf("All", "Songs", "Albums", "Artists", "Folders")
+        val categories = listOf("All", "Songs", "Albums", "Artists", "Folders", "YT Music")
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
             contentPadding = PaddingValues(horizontal = 16.dp, vertical = 6.dp),
@@ -433,7 +460,20 @@ fun SearchScreen(
         Spacer(modifier = Modifier.height(4.dp))
 
         // Search Results Content
-        if (searchQuery.isBlank()) {
+        if (selectedFilter == "YT Music") {
+            YouTubeResultsSection(
+                query = searchQuery,
+                loading = ytLoading,
+                error = ytError,
+                results = ytResults,
+                isDark = isDark,
+                textColorPrimary = textColorPrimary,
+                textColorSecondary = textColorSecondary,
+                onPlay = onPlayYouTube,
+                onPlayNext = onYouTubePlayNext,
+                onAddToQueue = onYouTubeAddToQueue
+            )
+        } else if (searchQuery.isBlank()) {
             // Idle State: suggestions / quick start (Positioned near the top so keyboard never covers it)
             Column(
                 modifier = Modifier
@@ -854,6 +894,231 @@ fun SearchTrackRow(
                 onDelete = { onDeleteTrack(track) },
                 onBlacklist = { onBlacklistTrack(track) }
             )
+        }
+    }
+}
+
+/**
+ * YouTube Music results for the search screen.
+ *
+ * The section owns no player state: tapping a row hands the whole result list back to the
+ * activity so the queue and the local library stay in one place.
+ */
+@Composable
+private fun YouTubeResultsSection(
+    query: String,
+    loading: Boolean,
+    error: String?,
+    results: List<YouTubeTrack>,
+    isDark: Boolean,
+    textColorPrimary: Color,
+    textColorSecondary: Color,
+    onPlay: (List<YouTubeTrack>, Int) -> Unit,
+    onPlayNext: (YouTubeTrack) -> Unit,
+    onAddToQueue: (YouTubeTrack) -> Unit
+) {
+    when {
+        query.trim().length < 2 -> {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(horizontal = 32.dp, vertical = 24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Top
+            ) {
+                Spacer(modifier = Modifier.height(36.dp))
+                Text(
+                    text = "Search YouTube Music",
+                    color = textColorPrimary,
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Type at least 2 characters to play a song online",
+                    color = textColorSecondary,
+                    fontSize = 13.sp
+                )
+            }
+        }
+
+        loading -> {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 24.dp, vertical = 24.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                CircularProgressIndicator(
+                    modifier = Modifier.size(18.dp),
+                    strokeWidth = 2.dp,
+                    color = MusicRed
+                )
+                Spacer(modifier = Modifier.width(12.dp))
+                Text(
+                    text = "Searching YouTube Music…",
+                    color = textColorSecondary,
+                    fontSize = 13.sp
+                )
+            }
+        }
+
+        error != null -> {
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .padding(32.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center
+            ) {
+                Text(
+                    text = error,
+                    color = textColorPrimary,
+                    fontSize = 17.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+                Text(
+                    text = "Check your connection or try another keyword",
+                    color = textColorSecondary,
+                    fontSize = 13.sp
+                )
+            }
+        }
+
+        else -> {
+            LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(bottom = 24.dp)
+            ) {
+                item {
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(horizontal = 20.dp, vertical = 10.dp),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "YT Music (${results.size})",
+                            color = textColorPrimary,
+                            fontSize = 20.sp,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                        Text(
+                            text = "Play all",
+                            color = MusicRed,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(8.dp))
+                                .clickable { onPlay(results, 0) }
+                                .padding(4.dp)
+                        )
+                    }
+                }
+                itemsIndexed(results) { index, track ->
+                    YouTubeTrackRow(
+                        track = track,
+                        isDark = isDark,
+                        textColorPrimary = textColorPrimary,
+                        textColorSecondary = textColorSecondary,
+                        onClick = { onPlay(results, index) },
+                        onPlayNext = { onPlayNext(track) },
+                        onAddToQueue = { onAddToQueue(track) }
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun YouTubeTrackRow(
+    track: YouTubeTrack,
+    isDark: Boolean,
+    textColorPrimary: Color,
+    textColorSecondary: Color,
+    onClick: () -> Unit,
+    onPlayNext: () -> Unit,
+    onAddToQueue: () -> Unit
+) {
+    var showMenu by remember { mutableStateOf(false) }
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Surface(
+            shape = RoundedCornerShape(8.dp),
+            color = if (isDark) Color(0xFF1E1E24) else LightSurfaceVariant,
+            modifier = Modifier.size(46.dp)
+        ) {
+            AsyncImage(
+                model = track.thumbnailUrl,
+                contentDescription = track.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
+        }
+
+        Spacer(modifier = Modifier.width(14.dp))
+
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = track.title,
+                color = textColorPrimary,
+                fontSize = 17.sp,
+                fontWeight = FontWeight.Normal,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+            Spacer(modifier = Modifier.height(2.dp))
+            Text(
+                text = "${track.artist} • ${formatDuration(track.durationMs)}",
+                color = textColorSecondary,
+                fontSize = 13.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+
+        Box {
+            IconButton(
+                onClick = { showMenu = true },
+                modifier = Modifier
+                    .clip(CircleShape)
+                    .size(34.dp)
+            ) {
+                Icon(
+                    imageVector = Icons.Default.MoreVert,
+                    contentDescription = "More options",
+                    tint = textColorSecondary,
+                    modifier = Modifier.size(20.dp)
+                )
+            }
+            DropdownMenu(
+                expanded = showMenu,
+                onDismissRequest = { showMenu = false }
+            ) {
+                DropdownMenuItem(
+                    text = { Text("Play next") },
+                    onClick = {
+                        showMenu = false
+                        onPlayNext()
+                    }
+                )
+                DropdownMenuItem(
+                    text = { Text("Add to queue") },
+                    onClick = {
+                        showMenu = false
+                        onAddToQueue()
+                    }
+                )
+            }
         }
     }
 }

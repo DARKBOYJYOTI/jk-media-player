@@ -80,6 +80,11 @@ android {
     buildFeatures {
         compose = true
     }
+    testOptions {
+        // Android framework stubs return default values in plain JVM tests, so pure mapping
+        // helpers can be tested without an emulator.
+        unitTests.isReturnDefaultValues = true
+    }
     packaging {
         resources {
             excludes += "/META-INF/{AL2.0,LGPL2.1}"
@@ -129,6 +134,12 @@ dependencies {
 
     // Coroutines
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.9.0")
+
+    // YouTube Music search and audio stream resolution
+    implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.27.1")
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
+
+    testImplementation("junit:junit:4.13.2")
 
     // Debugging
     debugImplementation("androidx.compose.ui:ui-tooling")

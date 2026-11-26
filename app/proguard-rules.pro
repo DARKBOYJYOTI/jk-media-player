@@ -24,3 +24,13 @@
 -dontwarn javax.imageio.**
 -dontwarn javax.swing.**
 -keep class org.jaudiotagger.** { *; }
+
+# NewPipeExtractor: resolves YouTube Music search and stream URLs for the music app.
+# The extractor wires its parsers through generated JSON accessors, so the whole tree is kept.
+-keep class org.schabi.newpipe.** { *; }
+-keep interface org.schabi.newpipe.** { *; }
+-dontwarn org.schabi.newpipe.**
+-keep class com.grack.nanojson.** { *; }
+-dontwarn com.grack.nanojson.**
+-dontwarn org.jsoup.**
+-dontwarn org.mozilla.javascript.**

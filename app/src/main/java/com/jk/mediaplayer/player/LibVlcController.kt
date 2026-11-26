@@ -456,7 +456,9 @@ class LibVlcController(
         uri: Uri? = null,
         resumePositionMs: Long = 0L,
         username: String? = null,
-        password: String? = null
+        password: String? = null,
+        httpHeaders: Map<String, String> = emptyMap(),
+        audioOnly: Boolean = false
     ) {
         val vlc = libVLC ?: return
         stopProgressUpdates()
@@ -572,6 +574,13 @@ class LibVlcController(
             }
             if (isOnlineStream) {
                 media.addOption(":network-caching=2000")
+                httpHeaders["User-Agent"]?.let { media.addOption(":http-user-agent=$it") }
+                httpHeaders["Referer"]?.let { media.addOption(":http-referrer=$it") }
+                if (audioOnly) {
+                    // Remote audio streams carry no file extension, so the local audio branch
+                    // below cannot detect them. Force the video output off explicitly.
+                    media.addOption(":no-video")
+                }
                 if (!username.isNullOrBlank()) {
                     media.addOption(":http-user=$username")
                     media.addOption(":rtsp-user=$username")
