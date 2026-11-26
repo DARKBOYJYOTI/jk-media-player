@@ -3,7 +3,6 @@ package com.jk.mediaplayer.player
 import android.content.Context
 import android.net.Uri
 import android.os.SystemClock
-import android.util.Log
 import com.jk.mediaplayer.data.PreferencesManager
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
@@ -114,11 +113,13 @@ class LibVlcController(
     private var lastRequestedVolume: Int = 100
     private var volumeRampJob: Job? = null
     private var pendingPause: Boolean = false
+    /** True while paused after a fade-out left the native AudioTrack at volume 0. */
+    private var isPausedAtZeroVolume: Boolean = false
     /** Bumped whenever playback state changes, so a stale pause fade cannot touch new media. */
     private var pauseGeneration: Long = 0L
     /** Music fades in and out softly; video starts and stops instantly. */
-    private val musicFadeInMs: Long = if (isVideoFlow) 0L else 300L
-    private val musicFadeOutMs: Long = if (isVideoFlow) 0L else 220L
+    private val musicFadeInMs: Long = if (isVideoFlow) 0L else 180L
+    private val musicFadeOutMs: Long = if (isVideoFlow) 0L else 180L
     private var targetAudioSessionId: Int = 0
 
     private var bufferingJob: kotlinx.coroutines.Job? = null
@@ -141,9 +142,9 @@ class LibVlcController(
                 _encounteredError.value = null
                 val currentVol = mediaPlayer?.volume ?: -1
                 val rampRunning = volumeRampJob?.isActive == true
-                if (!rampRunning && currentVol >= 0 && currentVol != lastRequestedVolume) {
+                if (!rampRunning && !isPausedAtZeroVolume && currentVol >= 0 && currentVol != lastRequestedVolume) {
                     // Ignore libVLC's -1 sentinel before the AudioTrack is ready, and do not snap
-                    // the level while a start ramp is running; writing volume on the first PCM
+                    // the level while a fade ramp is running; writing volume on the first PCM
                     // frame causes an audible speaker click.
                     if (kotlin.math.abs(currentVol - lastRequestedVolume) > 20) {
                         mediaPlayer?.volume = lastRequestedVolume
@@ -258,7 +259,6 @@ class LibVlcController(
             MediaPlayer.Event.EndReached -> {
                 val currentPos = mediaPlayer?.time ?: 0L
                 val totalLen = mediaPlayer?.length ?: 0L
-                Log.i(AUDIO_DIAG_TAG, "LibVLC EndReached hasEverPlayed=$hasEverPlayed currentPos=$currentPos totalLen=$totalLen volume=${mediaPlayer?.volume}")
                 playbackWatchdogJob?.cancel()
                 playbackWatchdogJob = null
                 bufferingJob?.cancel()
@@ -269,7 +269,6 @@ class LibVlcController(
 
                 // If EndReached fired without ever playing or 0 duration, LibVLC failed to decode or open the file/stream
                 if (!hasEverPlayed || (currentPos <= 1000L && totalLen <= 0L)) {
-                    Log.e(AUDIO_DIAG_TAG, "LibVLC EndReached without valid playback -> reporting error")
                     val err = "Cannot play this video. The codec or container format is unsupported, or the file is corrupted."
                     reportError(err)
                     return@EventListener
@@ -284,7 +283,6 @@ class LibVlcController(
                 onEndReached?.invoke()
             }
             MediaPlayer.Event.EncounteredError -> {
-                Log.e(AUDIO_DIAG_TAG, "LibVLC EncounteredError")
                 val err = "Cannot play this media. The format or stream may be corrupted or unsupported."
                 reportError(err)
             }
@@ -324,7 +322,6 @@ class LibVlcController(
 
     private fun initLibVLC() {
         targetAudioSessionId = customAudioSessionId ?: if (enableAudioSession) AudioSession.id(context) else 0
-        Log.i(AUDIO_DIAG_TAG, "AudioSession id=$targetAudioSessionId (applied as global libVLC option)")
         // Every option in this list must exist in the bundled libvlc build: one unknown option
         // makes libvlc_new() return null and the whole list is thrown away. "sub-autodetect-caching"
         // is not part of VLC 3.6 and used to force the safe fallback on every launch.
@@ -333,10 +330,14 @@ class LibVlcController(
         val audioOutputOption = "--aout=android_audiotrack"
         val stretchOption = if (isVideoFlow) "--audio-time-stretch" else "--no-audio-time-stretch"
         val hwDecodeOption = if (isVideoFlow) "--avcodec-hw=any" else "--avcodec-hw=none"
+        // Ogg Opus/Vorbis files commonly pack 1,000 ms of audio per Ogg page; a 400 ms cache
+        // starves and triggers AudioTrack resync clicks on pause/resume. 1,200 ms fits full
+        // Ogg pages with headroom for all music formats while keeping local startup instant.
+        val localFileCachingMs = if (isVideoFlow) 400 else 1200
         val primaryOptions = arrayListOf(
             audioOutputOption,
             hwDecodeOption,            // Software audio decoding for music avoids MediaCodec init clicks
-            "--file-caching=400",      // Optimal buffer eliminating choke & initial stall
+            "--file-caching=$localFileCachingMs",
             "--network-caching=1000",
             stretchOption              // Pitch correction only where speed control exists
         )
@@ -364,7 +365,7 @@ class LibVlcController(
         )
         val fallbackOptions = arrayListOf(
             "--aout=android_audiotrack",
-            "--file-caching=400"
+            "--file-caching=$localFileCachingMs"
         ).apply {
             if (isVideoFlow) {
                 add("--subsdec-encoding=UTF-8")
@@ -388,7 +389,6 @@ class LibVlcController(
                 fallbackOptions.filterNot { it.startsWith("--audiotrack-session-id") }.toMutableList()
             )
         if (libVLC == null) {
-            Log.e(AUDIO_DIAG_TAG, "LibVLC init failed with every option set")
             reportError("Audio engine could not start on this device.")
             return
         }
@@ -408,7 +408,6 @@ class LibVlcController(
         return try {
             LibVLC(context.applicationContext, options)
         } catch (e: Throwable) {
-            Log.w(AUDIO_DIAG_TAG, "LibVLC rejected optional option set (${options.size} opts): ${e.message}")
             null
         }
     }
@@ -439,7 +438,6 @@ class LibVlcController(
             mediaPlayer?.setVideoTrackEnabled(true)
             applyResizeMode()
         } catch (e: Throwable) {
-            Log.e(AUDIO_DIAG_TAG, "attachVideoLayout error: ${e.message}")
         }
     }
 
@@ -452,7 +450,6 @@ class LibVlcController(
                 mediaPlayer?.detachViews()
             }
         } catch (e: Throwable) {
-            Log.e(AUDIO_DIAG_TAG, "detachVideoLayout error: ${e.message}")
         }
     }
 
@@ -466,7 +463,6 @@ class LibVlcController(
             mediaPlayer?.setVideoTrackEnabled(true)
             applyResizeMode()
         } catch (e: Throwable) {
-            Log.e(AUDIO_DIAG_TAG, "reattachVideoLayout error: ${e.message}")
         }
     }
 
@@ -480,7 +476,6 @@ class LibVlcController(
                     applyResizeMode()
                 }
             } catch (e: Throwable) {
-                Log.e(AUDIO_DIAG_TAG, "refreshPausedFrame error: ${e.message}")
             }
         }
     }
@@ -500,6 +495,7 @@ class LibVlcController(
         // as "play, duck, play" while the UI still says playing.
         pauseGeneration++
         pendingPause = false
+        isPausedAtZeroVolume = false
         cancelVolumeRamp()
         stopProgressUpdates()
         playbackWatchdogJob?.cancel()
@@ -560,7 +556,6 @@ class LibVlcController(
                 path.isNotEmpty() && java.io.File(path).exists() -> {
                     val file = java.io.File(path)
                     if (forcedDemux != null) {
-                        Log.i(AUDIO_DIAG_TAG, "Misnamed file detected for path=$path: forcing demux=$forcedDemux")
                         val pfd = try {
                             android.os.ParcelFileDescriptor.open(file, android.os.ParcelFileDescriptor.MODE_READ_ONLY)
                         } catch (_: Exception) { null }
@@ -633,10 +628,11 @@ class LibVlcController(
                 if (isLocalAudioFile) {
                     media.addOption(":no-video")
                 }
-                // 150ms starved the AudioTrack on larger local files: output started, the
-                // cache emptied and the sound dipped before it recovered. Seek never dipped
-                // because the cache was already warm.
-                media.addOption(":file-caching=400")
+                // Ogg Opus/Vorbis files commonly pack 1,000 ms of audio per Ogg page; a 400 ms
+                // cache starves and triggers AudioTrack resync clicks on pause/resume. 1,200 ms
+                // accommodates full Ogg pages cleanly across all music formats.
+                val localFileCachingMs = if (isVideoFlow) 400 else 1200
+                media.addOption(":file-caching=$localFileCachingMs")
             }
             if (isVideoFlow) {
                 // Subtitles are off unless this viewer already chose a track for this playback.
@@ -714,7 +710,8 @@ class LibVlcController(
                     try { previousPfd.close() } catch (_: Exception) {}
                 }
                 setEventListener(playerEventListener)
-                if (lastRequestedVolume != 100) {
+                val currentVol = volume
+                if ((currentVol >= 0 && currentVol != lastRequestedVolume) || lastRequestedVolume != 100) {
                     volume = lastRequestedVolume
                 }
                 if (currentPlaybackSpeed != 1.0f) {
@@ -771,7 +768,6 @@ class LibVlcController(
             if (newPfd != null && newPfd !== currentPfd) {
                 try { newPfd.close() } catch (_: Exception) {}
             }
-            e.printStackTrace()
             val err = "Cannot play this media: ${e.localizedMessage ?: "Playback error"}"
             reportError(err)
         }
@@ -795,8 +791,25 @@ class LibVlcController(
     fun play() {
         val player = mediaPlayer ?: return
         cancelVolumeRamp()
+        val wasPendingPause = pendingPause
+        val wasZeroPaused = isPausedAtZeroVolume
         pendingPause = false
+        isPausedAtZeroVolume = false
         pauseGeneration++
+        val logical = lastRequestedVolume
+        if (wasPendingPause && player.isPlaying) {
+            // Resumed while the pause fade-out was still running: ramp smoothly back up from the
+            // current level instead of snapping the volume.
+            if (musicFadeInMs > 0L) {
+                val start = currentPlayerVolume(0)
+                if (start != logical) {
+                    volumeRampJob = progressScope.launch {
+                        rampVolumeInternal(start, logical, musicFadeInMs)
+                    }
+                }
+            }
+            return
+        }
         if (player.isPlaying) return
         val state = player.playerState
         val isAtEnd = _totalDuration.value > 0L && _currentTime.value >= _totalDuration.value - 1000L
@@ -811,25 +824,23 @@ class LibVlcController(
             }
             player.time = 0L
         }
-        // Music fades in only when a track truly starts. Resuming from a pause must not fade from
-        // silence: toggling within a few seconds of the start re-created the AudioTrack mid-stream,
-        // which was heard as a click on the speaker.
-        val logical = lastRequestedVolume
-        val freshStart = !hasEverPlayed && _currentTime.value < 500L
-        val fadeIn = if (freshStart) musicFadeInMs else 0L
-        // Only write the level when a ramp needs it. A plain resume keeps the AudioTrack volume
-        // untouched: writing the same value is heard as a click on the phone speaker.
-        if (fadeIn > 0L) {
-            try { player.volume = 0 } catch (_: Throwable) {}
+        if (wasZeroPaused && musicFadeInMs > 0L) {
+            // The AudioTrack was paused at volume 0, so resuming starts silently and ramps up
+            // after a short settle delay without any gain snap or click.
+            player.play()
+            if (attachedLayout != null) {
+                applyResizeMode()
+            }
+            volumeRampJob = progressScope.launch {
+                delay(25L)
+                rampVolumeInternal(0, logical, musicFadeInMs)
+            }
+            return
         }
+        // Plain resume without a prior fade-out: keep the AudioTrack volume untouched.
         player.play()
         if (attachedLayout != null) {
             applyResizeMode()
-        }
-        if (fadeIn > 0L) {
-            volumeRampJob = progressScope.launch {
-                rampVolumeInternal(0, logical, fadeIn)
-            }
         }
     }
 
@@ -837,12 +848,12 @@ class LibVlcController(
         val player = mediaPlayer ?: return
         if (!player.isPlaying || pendingPause) return
         // A pause in the first moment of playback skips the fade: the AudioTrack is still settling
-        // and a second volume ramp makes the output restart audibly. With fades disabled the level
-        // is left exactly as it is: only the pause command reaches the AudioTrack.
+        // and a volume ramp makes the output restart audibly.
         val sinceStart = SystemClock.elapsedRealtime() - playbackStartTimeMs
         if (sinceStart < 600L || musicFadeOutMs <= 0L) {
             cancelVolumeRamp()
             pendingPause = false
+            isPausedAtZeroVolume = false
             pauseGeneration++
             try { player.pause() } catch (_: Throwable) {}
             _isPlaying.value = false
@@ -855,14 +866,18 @@ class LibVlcController(
         volumeRampJob = progressScope.launch {
             val start = currentPlayerVolume(lastRequestedVolume)
             rampVolumeInternal(start, 0, musicFadeOutMs.coerceAtLeast(1L))
-            // A new track started while this fade was running: leave its audio alone.
+            // A new track or resume started while this fade was running: leave its audio alone.
             if (!pendingPause || generation != pauseGeneration) return@launch
+            // Let the AudioTrack render true silence before pausing asynchronously.
+            delay(35L)
+            if (!pendingPause || generation != pauseGeneration) return@launch
+            // Keep volume at 0 while paused instead of restoring it right after async pause():
+            // writing volume back to 100 before the native AudioTrack finishes pausing caused a
+            // pop/snap (especially on Ogg Opus's 1 s pages) and left AudioFlinger gain dirty.
+            isPausedAtZeroVolume = true
             try { player.pause() } catch (_: Throwable) {}
-            // The stream is silent here, so restoring the logical level is inaudible and the
-            // next resume starts from the user's value instead of 0. Read it after the fade so a
-            // volume change made during the short fade window is not lost.
-            try { player.volume = lastRequestedVolume } catch (_: Throwable) {}
             pendingPause = false
+            _isPlaying.value = false
             if (attachedLayout != null) {
                 applyResizeMode()
             }
@@ -872,7 +887,7 @@ class LibVlcController(
     /** Fast temporary level change (audio focus ducking) that keeps the user's logical volume. */
     fun rampVolume(targetVolume: Int, durationMs: Long = 90L) {
         val player = mediaPlayer ?: return
-        if (pendingPause) return
+        if (pendingPause || isPausedAtZeroVolume) return
         cancelVolumeRamp()
         val target = targetVolume.coerceIn(0, 200)
         val start = currentPlayerVolume(target)
@@ -888,11 +903,23 @@ class LibVlcController(
     }
 
     private suspend fun rampVolumeInternal(from: Int, to: Int, durationMs: Long) {
-        val steps = (durationMs / 8L).coerceAtLeast(1L).toInt()
+        val steps = (durationMs / 10L).coerceAtLeast(1L).toInt()
+        val stepDelayMs = (durationMs / steps).coerceAtLeast(1L)
+        var lastWritten = -1
         for (i in 1..steps) {
-            val level = from + ((to - from) * i) / steps
-            try { mediaPlayer?.volume = level.coerceIn(0, 200) } catch (_: Throwable) {}
-            delay(8L)
+            val progress = i.toDouble() / steps.toDouble()
+            // Cosine ease-in-out gives a smooth perceptual transition near silence.
+            val eased = 0.5 * (1.0 - kotlin.math.cos(kotlin.math.PI * progress))
+            val level = (from + (to - from) * eased).toInt().coerceIn(0, 200)
+            if (level != lastWritten) {
+                try { mediaPlayer?.volume = level } catch (_: Throwable) {}
+                lastWritten = level
+            }
+            delay(stepDelayMs)
+        }
+        val finalLevel = to.coerceIn(0, 200)
+        if (lastWritten != finalLevel) {
+            try { mediaPlayer?.volume = finalLevel } catch (_: Throwable) {}
         }
     }
 
@@ -917,8 +944,10 @@ class LibVlcController(
         volumeRampJob = progressScope.launch {
             rampVolumeInternal(currentPlayerVolume(lastRequestedVolume), 0, musicFadeOutMs.coerceAtLeast(1L))
             if (generation != pauseGeneration) return@launch
+            delay(35L)
+            if (generation != pauseGeneration) return@launch
             try { player.stop() } catch (_: Throwable) {}
-            try { player.volume = lastRequestedVolume } catch (_: Throwable) {}
+            isPausedAtZeroVolume = true
             pendingPause = false
             _isPlaying.value = false
         }
@@ -929,6 +958,7 @@ class LibVlcController(
         // Stopping invalidates any fade that is still in flight.
         pauseGeneration++
         pendingPause = false
+        isPausedAtZeroVolume = false
         cancelVolumeRamp()
         if (player.isPlaying) player.stop()
         _isPlaying.value = false
@@ -1004,7 +1034,6 @@ class LibVlcController(
         try {
             mediaPlayer?.rate = clamped
         } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 
@@ -1016,21 +1045,16 @@ class LibVlcController(
         // LibVLC native volume scale is 0 to 200 (200% native software boost)
         val appliedVolume = volumeLevel.coerceIn(0, 200)
         lastRequestedVolume = appliedVolume
-        if (!pendingPause) cancelVolumeRamp()
+        if (pendingPause || isPausedAtZeroVolume) return
+        cancelVolumeRamp()
         try {
             mediaPlayer?.volume = appliedVolume
-        } catch (e: Throwable) {
-            Log.w(AUDIO_DIAG_TAG, "setVolume error: ${e.message}")
+        } catch (_: Throwable) {
         }
-        Log.i(AUDIO_DIAG_TAG, "setLibVlcVolume requested=$volumeLevel applied=$appliedVolume")
     }
 
     fun getVolume(): Int {
         return mediaPlayer?.volume?.takeIf { it >= 0 } ?: lastRequestedVolume
-    }
-
-    companion object {
-        private const val AUDIO_DIAG_TAG = "JKAudioDiag"
     }
 
     fun setAspectRatio(ratio: String?) {
@@ -1073,7 +1097,6 @@ class LibVlcController(
         try {
             mediaPlayer?.spuTrack = -1
         } catch (e: Throwable) {
-            Log.e(AUDIO_DIAG_TAG, "enforceSubtitleOff error: ${e.message}")
         }
     }
 
@@ -1182,9 +1205,7 @@ class LibVlcController(
             player.scale = 0f
             player.videoScale = MediaPlayer.ScaleType.SURFACE_BEST_FIT
             attachedLayout?.post { attachedLayout?.requestLayout() }
-            Log.i(AUDIO_DIAG_TAG, "applyResizeMode applied mode=$currentResizeMode")
         } catch (e: Throwable) {
-            Log.e(AUDIO_DIAG_TAG, "applyResizeMode error: ${e.message}")
         }
     }
 

@@ -208,7 +208,6 @@ class MainActivity : ComponentActivity() {
         try {
             startService(serviceIntent)
         } catch (e: Exception) {
-            e.printStackTrace()
         }
         bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
 

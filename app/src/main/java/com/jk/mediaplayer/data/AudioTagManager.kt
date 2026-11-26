@@ -2,7 +2,6 @@ package com.jk.mediaplayer.data
 
 import android.content.Context
 import android.media.MediaScannerConnection
-import android.util.Log
 import com.jk.mediaplayer.model.AudioItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -75,7 +74,6 @@ data class AudioTagData(
 }
 
 object AudioTagManager {
-    private const val TAG = "AudioTagManager"
 
     init {
         try {
@@ -130,7 +128,6 @@ object AudioTagManager {
                 )
             )
         } catch (e: Throwable) {
-            Log.e(TAG, "Error reading tags for $filePath", e)
             Result.failure(e)
         }
     }
@@ -163,7 +160,6 @@ object AudioTagManager {
                         tag.setField(key, value.trim())
                     }
                 } catch (e: Throwable) {
-                    Log.w(TAG, "Could not set tag field $key: ${e.message}")
                 }
             }
 
@@ -183,7 +179,6 @@ object AudioTagManager {
                 try {
                     tag.deleteArtworkField()
                 } catch (e: Throwable) {
-                    Log.w(TAG, "Error deleting artwork: ${e.message}")
                 }
             } else if (newArtworkBytes != null && newArtworkBytes.isNotEmpty()) {
                 try {
@@ -194,7 +189,6 @@ object AudioTagManager {
                     artwork.pictureType = PictureTypes.DEFAULT_ID
                     tag.setField(artwork)
                 } catch (e: Throwable) {
-                    Log.e(TAG, "Error setting artwork: ${e.message}", e)
                 }
             }
 
@@ -212,7 +206,6 @@ object AudioTagManager {
                 arrayOf(file.absolutePath),
                 null
             ) { path, uri ->
-                Log.i(TAG, "MediaStore scan finished: $path -> $uri")
             }
 
             // Invalidate cached music so library view re-queries fresh metadata
@@ -226,7 +219,6 @@ object AudioTagManager {
 
             Result.success(updatedTrack)
         } catch (e: Throwable) {
-            Log.e(TAG, "Error saving tags for ${track.path}", e)
             Result.failure(e)
         }
     }

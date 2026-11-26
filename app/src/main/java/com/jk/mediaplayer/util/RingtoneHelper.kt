@@ -16,7 +16,6 @@ import android.os.Build
 import android.os.Environment
 import android.provider.MediaStore
 import android.provider.Settings
-import android.util.Log
 import com.jk.mediaplayer.data.PreferencesManager
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -29,7 +28,6 @@ import kotlin.math.sin
 
 object RingtoneHelper {
 
-    private const val TAG = "RingtoneHelper"
 
     enum class RingtoneTarget(val label: String) {
         PHONE_SIM_1("Phone Ringtone (SIM 1 / All)"),
@@ -59,7 +57,6 @@ object RingtoneHelper {
             }
             context.startActivity(intent)
         } catch (e: Exception) {
-            Log.e(TAG, "Cannot open WRITE_SETTINGS permission activity: ${e.message}")
         }
     }
 
@@ -131,7 +128,6 @@ object RingtoneHelper {
             }
             return outputFile.exists() && outputFile.length() > 512
         } catch (e: Exception) {
-            Log.e(TAG, "extractMp3Segment failed: ${e.message}", e)
             return false
         } finally {
             try { extractor.release() } catch (_: Exception) {}
@@ -219,7 +215,6 @@ object RingtoneHelper {
             }
             return outputFile.exists() && outputFile.length() > 512
         } catch (e: Exception) {
-            Log.e(TAG, "encodePcmToAac failed: ${e.message}", e)
             return false
         } finally {
             try { encoder?.stop(); encoder?.release() } catch (_: Exception) {}
@@ -420,7 +415,6 @@ object RingtoneHelper {
             }
             cacheFile
         } catch (e: Exception) {
-            Log.e(TAG, "Error trimming audio: ${e.message}", e)
             null
         } finally {
             try { codec?.stop(); codec?.release() } catch (_: Exception) {}
@@ -556,7 +550,6 @@ object RingtoneHelper {
                     null
                 )
             } catch (e: Exception) {
-                Log.w(TAG, "MediaScanner scan failed: ${e.message}")
             }
 
             // Automatically add to the custom "Ringtones" playlist!
@@ -571,7 +564,6 @@ object RingtoneHelper {
                 durationMs = durationMs
             )
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save ringtone to library: ${e.message}", e)
             return null
         }
     }
@@ -627,7 +619,6 @@ object RingtoneHelper {
             }
             true
         } catch (e: Exception) {
-            Log.e(TAG, "Error applying ringtone target: ${e.message}", e)
             false
         }
     }

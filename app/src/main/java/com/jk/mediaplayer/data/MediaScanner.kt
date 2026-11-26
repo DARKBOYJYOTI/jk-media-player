@@ -224,7 +224,6 @@ object MediaScanner {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
         }
 
 
@@ -366,7 +365,6 @@ object MediaScanner {
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
         }
 
         cachedMusic = audioList

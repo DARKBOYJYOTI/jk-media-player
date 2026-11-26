@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.media.AudioManager
 import android.media.audiofx.AudioEffect
-import android.util.Log
 
 /**
  * Global AudioSession manager that generates and holds a single, static audio session ID
@@ -16,7 +15,6 @@ import android.util.Log
  * (Wavelet, Poweramp Equalizer, Equalizer FX, system DSP) can then attach to the audio stream.
  */
 object AudioSession {
-    private const val TAG = "AudioSession"
     @Volatile private var _id = 0
     @Volatile private var isSessionActive = false
 
@@ -26,7 +24,6 @@ object AudioSession {
                 if (_id == 0) {
                     val am = context.applicationContext.getSystemService(Context.AUDIO_SERVICE) as AudioManager
                     _id = am.generateAudioSessionId()
-                    Log.i(TAG, "Initialized static AudioSession ID: $_id")
                 }
             }
         }
@@ -51,9 +48,7 @@ object AudioSession {
             }
             context.applicationContext.sendBroadcast(intent)
             isSessionActive = true
-            Log.i(TAG, "Broadcast ACTION_OPEN_AUDIO_EFFECT_CONTROL_SESSION for session id=$sessionId")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to send audio effect broadcast open", e)
         }
     }
 
@@ -72,9 +67,7 @@ object AudioSession {
                 putExtra(AudioEffect.EXTRA_PACKAGE_NAME, context.packageName)
             }
             context.applicationContext.sendBroadcast(intent)
-            Log.i(TAG, "Broadcast ACTION_CLOSE_AUDIO_EFFECT_CONTROL_SESSION for session id=$sessionId")
         } catch (e: Exception) {
-            Log.w(TAG, "Failed to send audio effect broadcast close", e)
         }
     }
 

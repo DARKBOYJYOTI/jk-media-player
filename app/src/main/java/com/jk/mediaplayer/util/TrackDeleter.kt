@@ -6,14 +6,12 @@ import android.app.RecoverableSecurityException
 import android.content.Context
 import android.os.Build
 import android.provider.MediaStore
-import android.util.Log
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.IntentSenderRequest
 import com.jk.mediaplayer.model.AudioItem
 import java.io.File
 
 object TrackDeleter {
-    private const val TAG = "TrackDeleter"
 
     /**
      * Safely deletes an audio file from the device storage and MediaStore.
@@ -60,14 +58,12 @@ object TrackDeleter {
                         IntentSenderRequest.Builder(pendingIntent.intentSender).build()
                     )
                 } catch (e: Exception) {
-                    Log.e(TAG, "Failed to create delete request: ${e.message}", e)
                     AppToast.show("Cannot delete track: ${e.message}")
                 }
             } else {
                 AppToast.show("Could not delete track file")
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Delete failed: ${e.message}", e)
             AppToast.show("Delete failed: ${e.message}")
         }
     }

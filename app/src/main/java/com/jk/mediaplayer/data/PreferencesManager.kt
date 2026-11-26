@@ -526,7 +526,6 @@ fun clearMetadataCache() {
             prefs.edit().putString("custom_playlists_json", arr.toString()).apply()
             playlistVersion++
         } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 

@@ -1,7 +1,6 @@
 package com.jk.mediaplayer.data
 
 import android.net.Uri
-import android.util.Log
 import android.webkit.MimeTypeMap
 import java.net.URL
 import java.net.URLDecoder
@@ -18,7 +17,6 @@ import java.net.URLDecoder
  */
 object MediaUrlResolver {
 
-    private const val TAG = "MediaUrlResolver"
 
     val VIDEO_EXTENSIONS = setOf(
         "mp4", "mkv", "webm", "avi", "mov", "flv", "ts", "m3u8", "mpd",
@@ -81,7 +79,6 @@ object MediaUrlResolver {
                 }
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed parsing Content-Disposition: $disposition, error: ${e.message}")
         }
         return null
     }
@@ -113,7 +110,6 @@ object MediaUrlResolver {
                 if (cleaned.isNotBlank()) return cleaned
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed extracting filename from URL: $url, error: ${e.message}")
         }
         return null
     }

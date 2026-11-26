@@ -312,7 +312,6 @@ fun FolderVideosScreen(
                     try {
                         onRefreshLibrary()
                     } catch (e: Exception) {
-                        e.printStackTrace()
                     }
                     val elapsed = System.currentTimeMillis() - startedAt
                     if (elapsed < 650L) kotlinx.coroutines.delay(650L - elapsed)

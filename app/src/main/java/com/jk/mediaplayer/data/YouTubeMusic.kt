@@ -2,7 +2,6 @@ package com.jk.mediaplayer.data
 
 import android.content.Context
 import android.net.Uri
-import android.util.Log
 import com.jk.mediaplayer.model.AudioItem
 import com.jk.mediaplayer.data.potoken.PoTokenProviderImpl
 import kotlinx.coroutines.Dispatchers
@@ -51,7 +50,6 @@ object YouTubeMusic {
     private const val REMOTE_ID_MASK = 0x1FFFFFFFL
     private const val STREAM_CACHE_TTL_MS = 4L * 60L * 60L * 1000L
     private const val MAX_STREAM_CANDIDATES = 4
-    private const val TAG = "YouTubeMusic"
 
     /**
      * googlevideo rejects requests whose user agent does not match the client that produced the
@@ -121,7 +119,6 @@ object YouTubeMusic {
                     .mapNotNull { item -> runCatching { item.toTrackOrNull() }.getOrNull() }
                     .take(limit)
             } catch (t: Throwable) {
-                Log.w(TAG, "search failed for \"$trimmed\": ${t.javaClass.simpleName}: ${t.message}")
                 emptyList()
             }
         }
@@ -171,7 +168,6 @@ object YouTubeMusic {
                     extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { add(Candidate(it, "HLS")) }
                 }.distinctBy { it.url }
                 if (candidates.isEmpty()) {
-                    Log.w(TAG, "no audio streams for $videoId")
                     return@withContext null
                 }
                 // YouTube hands out URLs that can answer 403 for a client mismatch, and some
@@ -186,19 +182,11 @@ object YouTubeMusic {
                         if (skipUrls.isEmpty()) {
                             streamCache[videoId] = CachedStream(resolved, now + STREAM_CACHE_TTL_MS)
                         }
-                        Log.i(
-                            TAG,
-                            "resolved $videoId in ${System.currentTimeMillis() - resolveStart}ms " +
-                                "(${candidates.size} candidates, picked ${candidate.label}, " +
-                                "skipped ${skipUrls.size})"
-                        )
                         return@withContext resolved
                     }
                 }
-                Log.w(TAG, "no reachable audio stream for $videoId (${candidates.size} candidates)")
                 null
             } catch (t: Throwable) {
-                Log.w(TAG, "resolve failed for $videoId: ${t.javaClass.simpleName}: ${t.message}")
                 null
             }
         }
@@ -227,7 +215,6 @@ object YouTubeMusic {
                 response.isSuccessful || response.code == 206
             }
         } catch (t: Throwable) {
-            Log.w(TAG, "probe failed: ${t.javaClass.simpleName}")
             false
         }
     }

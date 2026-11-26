@@ -10,7 +10,6 @@ import android.content.pm.ServiceInfo
 import android.os.Build
 import android.os.IBinder
 import android.os.PowerManager
-import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import com.jk.mediaplayer.R
@@ -35,7 +34,6 @@ import com.jk.mediaplayer.ui.video.VideoPlayerActivity
 class DownloadService : Service() {
 
     companion object {
-        private const val TAG = "DownloadService"
         const val CHANNEL_ID = "jk_media_downloads"
         const val ONGOING_NOTIFICATION_ID = 9001
 
@@ -57,7 +55,6 @@ class DownloadService : Service() {
                     }
                     ContextCompat.startForegroundService(context, intent)
                 } catch (e: Exception) {
-                    Log.w(TAG, "Failed to start DownloadService: ${e.message}")
                 }
             } else {
                 stop(context)
@@ -69,7 +66,6 @@ class DownloadService : Service() {
                 val intent = Intent(context, DownloadService::class.java)
                 context.stopService(intent)
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to stop DownloadService: ${e.message}")
             }
         }
 
@@ -101,7 +97,6 @@ class DownloadService : Service() {
 
                 nm.notify(task.id.hashCode(), notif)
             } catch (e: Exception) {
-                Log.w(TAG, "Failed to post download complete notification: ${e.message}")
             }
         }
 
@@ -306,7 +301,6 @@ class DownloadService : Service() {
                 startForeground(ONGOING_NOTIFICATION_ID, notification)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to start foreground: ${e.message}")
         }
     }
 
@@ -322,7 +316,6 @@ class DownloadService : Service() {
                 wakeLock?.acquire(6 * 60 * 60 * 1000L) // 6 hours safety timeout
             }
         } catch (e: Exception) {
-            Log.w(TAG, "Failed acquiring wakeLock: ${e.message}")
         }
     }
 

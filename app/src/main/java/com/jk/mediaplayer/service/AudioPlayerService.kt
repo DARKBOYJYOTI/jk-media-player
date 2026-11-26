@@ -10,7 +10,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
-import android.util.Log
 import android.os.Bundle
 import android.os.PowerManager
 import com.jk.mediaplayer.data.MediaScanner
@@ -71,7 +70,6 @@ class AudioPlayerService : Service() {
                 wakeLock?.acquire(6 * 60 * 60 * 1000L) // 6 hours safety timeout
             }
         } catch (e: Exception) {
-            Log.w(AUDIO_DIAG_TAG, "Failed acquiring wakeLock: ${e.message}")
         }
     }
 
@@ -81,7 +79,6 @@ class AudioPlayerService : Service() {
                 wakeLock?.release()
             }
         } catch (e: Exception) {
-            Log.w(AUDIO_DIAG_TAG, "Failed releasing wakeLock: ${e.message}")
         }
     }
 
@@ -606,14 +603,8 @@ class AudioPlayerService : Service() {
                     _isLoadingRemote.value = false
                     consecutiveRemoteFailures = 0
                     prefetchNextRemoteTrack()
-                    Log.i(
-                        "AudioPlayerService",
-                        "remote playback started in ${System.currentTimeMillis() - startedAt}ms " +
-                            "(attempt $attempt)"
-                    )
                     return@launch
                 }
-                Log.w("AudioPlayerService", "candidate $attempt stalled, trying the next one")
                 controller?.stop()
                 delay(400L)
             }
@@ -621,10 +612,6 @@ class AudioPlayerService : Service() {
             _isLoadingRemote.value = false
             if (requestToken != remoteRequestToken) return@launch
             consecutiveRemoteFailures++
-            Log.w(
-                "AudioPlayerService",
-                "remote resolve failed for ${track.title} (${YouTubeMusic.videoIdOf(track.path)})"
-            )
             Toast.makeText(
                 this@AudioPlayerService,
                 if (consecutiveRemoteFailures < 3) {
@@ -661,7 +648,6 @@ class AudioPlayerService : Service() {
             if (!controller.isPlaying.value && (waitedMs == 3_000L || waitedMs == 7_000L)) {
                 // LibVLC opens the stream but occasionally never reports Playing; calling play()
                 // again is the same action a manual play/pause performed.
-                Log.w("AudioPlayerService", "kickstarting stalled stream after ${waitedMs}ms")
                 controller.play()
             }
         }
@@ -1271,7 +1257,6 @@ class AudioPlayerService : Service() {
         var instance: AudioPlayerService? = null
             private set
 
-        private const val AUDIO_DIAG_TAG = "JKAudioDiag"
         const val ACTION_TOGGLE = "com.jk.mediaplayer.ACTION_TOGGLE"
         const val ACTION_NEXT = "com.jk.mediaplayer.ACTION_NEXT"
         const val ACTION_PREV = "com.jk.mediaplayer.ACTION_PREV"

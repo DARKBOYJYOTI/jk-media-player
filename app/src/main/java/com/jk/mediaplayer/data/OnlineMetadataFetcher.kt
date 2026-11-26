@@ -753,7 +753,6 @@ object OnlineMetadataFetcher {
 
             negativeLyrics.add(cacheKey)
         } catch (e: Exception) {
-            e.printStackTrace()
             negativeLyrics.add(cacheKey)
         }
         emptyList()

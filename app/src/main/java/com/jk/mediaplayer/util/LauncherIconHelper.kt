@@ -89,11 +89,9 @@ object LauncherIconHelper {
                         PackageManager.DONT_KILL_APP
                     )
                 } catch (e: Exception) {
-                    e.printStackTrace()
                 }
             }
         } catch (e: Exception) {
-            e.printStackTrace()
         }
     }
 }

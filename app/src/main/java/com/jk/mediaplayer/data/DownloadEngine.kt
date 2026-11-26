@@ -3,7 +3,6 @@ package com.jk.mediaplayer.data
 import android.content.Context
 import android.media.MediaScannerConnection
 import android.os.Environment
-import android.util.Log
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableLongStateOf
@@ -69,7 +68,6 @@ class DownloadTask(
  */
 object DownloadEngine {
 
-    private const val TAG = "DownloadEngine"
     private const val PREFS_NAME = "jk_downloads"
     private const val KEY_DOWNLOADS_JSON = "downloads_list_json"
 
@@ -121,7 +119,6 @@ object DownloadEngine {
                 downloads.add(task)
             }
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to load downloads from prefs: ${e.message}")
         }
     }
 
@@ -147,7 +144,6 @@ object DownloadEngine {
             }
             prefs.edit().putString(KEY_DOWNLOADS_JSON, array.toString()).apply()
         } catch (e: Exception) {
-            Log.e(TAG, "Failed to save downloads to prefs: ${e.message}")
         }
     }
 
@@ -226,7 +222,6 @@ object DownloadEngine {
                     val file = File(task.filePath)
                     if (file.exists()) file.delete()
                 } catch (e: Exception) {
-                    Log.e(TAG, "Error deleting file: ${e.message}")
                 }
             }
             downloads.remove(task)
@@ -403,7 +398,6 @@ object DownloadEngine {
                     task.speedBytesPerSec = 0L
                 }
             } catch (e: Exception) {
-                Log.e(TAG, "Download error for ${task.title}: ${e.message}")
                 withContext(NonCancellable) {
                     task.status = DownloadStatus.FAILED
                     task.errorMessage = e.message ?: "Download failed"

@@ -1,6 +1,5 @@
 package com.jk.mediaplayer.data.potoken
 
-import android.util.Log
 import android.webkit.WebView
 import com.jk.mediaplayer.JKApplication
 import org.schabi.newpipe.extractor.localization.ContentCountry
@@ -22,7 +21,6 @@ import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
  */
 object PoTokenProviderImpl : PoTokenProvider {
 
-    private const val TAG = "PoTokenProvider"
 
     private val webViewSupported by lazy { WebViewSupport.isSupported }
     @Volatile
@@ -41,7 +39,6 @@ object PoTokenProviderImpl : PoTokenProvider {
             // RxJava wraps errors; unwrap so a broken WebView disables the provider for good.
             when (val cause = e.cause) {
                 is BadWebViewException -> {
-                    Log.e(TAG, "poToken disabled, WebView is broken", e)
                     webViewBadImpl = true
                     null
                 }
@@ -50,7 +47,6 @@ object PoTokenProviderImpl : PoTokenProvider {
                 else -> throw cause
             }
         } catch (e: PoTokenException) {
-            Log.w(TAG, "poToken mint failed for $videoId", e)
             null
         }
     }
@@ -89,12 +85,10 @@ object PoTokenProviderImpl : PoTokenProvider {
             snapshot.generator.generatePoToken(videoId).blockingGet()
         } catch (t: Throwable) {
             if (snapshot.recreated) throw t
-            Log.e(TAG, "poToken failed, recreating the generator", t)
             return mint(videoId, forceRecreate = true)
         }
 
         if (com.jk.mediaplayer.BuildConfig.DEBUG) {
-            Log.d(TAG, "poToken minted for $videoId")
         }
         return PoTokenResult(snapshot.visitorData, playerPot, snapshot.streamingPot)
     }

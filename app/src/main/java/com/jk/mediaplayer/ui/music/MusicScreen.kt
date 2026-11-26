@@ -668,7 +668,6 @@ fun MusicScreen(
                         try {
                             onRescanLibrary?.invoke()
                         } catch (e: Exception) {
-                            e.printStackTrace()
                         }
                         // Reset active tab scroll position and shuffle the Home recommendations
                         try {
@@ -1006,7 +1005,6 @@ fun MusicScreen(
                         try {
                             onRescanLibrary?.invoke()
                         } catch (e: Exception) {
-                            e.printStackTrace()
                         }
                     }
                 },
@@ -1064,7 +1062,6 @@ fun MusicScreen(
                         try {
                             onRescanLibrary?.invoke()
                         } catch (e: Exception) {
-                            e.printStackTrace()
                         }
                     }
                     com.jk.mediaplayer.ui.common.AppToast.show("\"${track.title}\" added to blacklist")
@@ -1099,7 +1096,6 @@ fun MusicScreen(
                         try {
                             onRescanLibrary?.invoke()
                         } catch (e: Exception) {
-                            e.printStackTrace()
                         }
                     }
                     com.jk.mediaplayer.ui.common.AppToast.show("\"${folder.name}\" added to blacklist")

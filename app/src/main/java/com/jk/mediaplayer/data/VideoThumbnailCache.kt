@@ -58,7 +58,6 @@ object VideoThumbnailCache {
                 }
                 return@withContext targetFile
             } catch (e: Exception) {
-                e.printStackTrace()
             }
         }
         return@withContext null
