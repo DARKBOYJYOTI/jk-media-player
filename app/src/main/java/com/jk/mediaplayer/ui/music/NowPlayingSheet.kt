@@ -208,6 +208,9 @@ fun NowPlayingSheet(
     val prefsManager = remember { com.jk.mediaplayer.data.PreferencesManager(context) }
     var showLyrics by remember { mutableStateOf(false) }
     val isLiked = isFavorite
+    val isRemoteTrack = remember(track.path) {
+        com.jk.mediaplayer.data.YouTubeMusic.videoIdOf(track.path) != null
+    }
     var isDisliked by remember { mutableStateOf(false) }
     var isQueueExpanded by remember { mutableStateOf(false) }
     // 0 = sheet, 1 = queue. Driven by an Animatable so the queue slides with the same feel as the
@@ -716,14 +719,16 @@ fun NowPlayingSheet(
                         shape = RoundedCornerShape(20.dp),
                         containerColor = if (isDark) Color(0xFF1E1E24) else Color(0xFFF2F4F7)
                     ) {
-                        DropdownMenuItem(
-                            text = { Text("Set as Ringtone", color = playerTextColorPrimary) },
-                            leadingIcon = { Icon(Icons.Default.ContentCut, contentDescription = null, tint = playerTextColorPrimary) },
-                            onClick = {
-                                showPlayerDropdown = false
-                                showRingtoneCutter = true
-                            }
-                        )
+                        if (!isRemoteTrack) {
+                            DropdownMenuItem(
+                                text = { Text("Set as Ringtone", color = playerTextColorPrimary) },
+                                leadingIcon = { Icon(Icons.Default.ContentCut, contentDescription = null, tint = playerTextColorPrimary) },
+                                onClick = {
+                                    showPlayerDropdown = false
+                                    showRingtoneCutter = true
+                                }
+                            )
+                        }
                         DropdownMenuItem(
                             text = { Text("Equalizer", color = playerTextColorPrimary) },
                             leadingIcon = { Icon(Icons.Default.GraphicEq, contentDescription = null, tint = playerTextColorPrimary) },
@@ -741,69 +746,61 @@ fun NowPlayingSheet(
                             leadingIcon = { Icon(Icons.Default.Share, contentDescription = null, tint = playerTextColorPrimary) },
                             onClick = {
                                 showPlayerDropdown = false
-                                try {
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "audio/*"
-                                        putExtra(Intent.EXTRA_STREAM, track.uri)
-                                        putExtra(Intent.EXTRA_TEXT, "${track.title} - ${track.artist}")
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(Intent.createChooser(shareIntent, "Share Track"))
-                                } catch (e: Exception) {
-                                    AppToast.show("Cannot share track: ${e.message}")
+                                shareTrack(context, track, isRemoteTrack)
+                            }
+                        )
+                        if (!isRemoteTrack) {
+                            DropdownMenuItem(
+                                text = { Text("Go to album", color = playerTextColorPrimary) },
+                                leadingIcon = { Icon(Icons.Default.Album, contentDescription = null, tint = playerTextColorPrimary) },
+                                onClick = {
+                                    showPlayerDropdown = false
+                                    onGoToAlbum(track.album)
+                                    dismissSmoothly()
                                 }
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Go to album", color = playerTextColorPrimary) },
-                            leadingIcon = { Icon(Icons.Default.Album, contentDescription = null, tint = playerTextColorPrimary) },
-                            onClick = {
-                                showPlayerDropdown = false
-                                onGoToAlbum(track.album)
-                                dismissSmoothly()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Go to artist", color = playerTextColorPrimary) },
-                            leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = playerTextColorPrimary) },
-                            onClick = {
-                                showPlayerDropdown = false
-                                onGoToArtist(track.artist)
-                                dismissSmoothly()
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Edit Tags", color = playerTextColorPrimary) },
-                            leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = playerTextColorPrimary) },
-                            onClick = {
-                                showPlayerDropdown = false
-                                tagEditorTrack = track
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Details", color = playerTextColorPrimary) },
-                            leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, tint = playerTextColorPrimary) },
-                            onClick = {
-                                showPlayerDropdown = false
-                                detailsTrack = track
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Blacklist song", color = Color(0xFFFF5252)) },
-                            leadingIcon = { Icon(Icons.Default.Block, contentDescription = null, tint = Color(0xFFFF5252)) },
-                            onClick = {
-                                showPlayerDropdown = false
-                                blacklistConfirmTrack = track
-                            }
-                        )
-                        DropdownMenuItem(
-                            text = { Text("Delete track", color = Color(0xFFFF5252)) },
-                            leadingIcon = { Icon(Icons.Default.DeleteOutline, contentDescription = null, tint = Color(0xFFFF5252)) },
-                            onClick = {
-                                showPlayerDropdown = false
-                                onDeleteTrack(track)
-                            }
-                        )
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Go to artist", color = playerTextColorPrimary) },
+                                leadingIcon = { Icon(Icons.Default.Person, contentDescription = null, tint = playerTextColorPrimary) },
+                                onClick = {
+                                    showPlayerDropdown = false
+                                    onGoToArtist(track.artist)
+                                    dismissSmoothly()
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Edit Tags", color = playerTextColorPrimary) },
+                                leadingIcon = { Icon(Icons.Default.Edit, contentDescription = null, tint = playerTextColorPrimary) },
+                                onClick = {
+                                    showPlayerDropdown = false
+                                    tagEditorTrack = track
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Details", color = playerTextColorPrimary) },
+                                leadingIcon = { Icon(Icons.Default.Info, contentDescription = null, tint = playerTextColorPrimary) },
+                                onClick = {
+                                    showPlayerDropdown = false
+                                    detailsTrack = track
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Blacklist song", color = Color(0xFFFF5252)) },
+                                leadingIcon = { Icon(Icons.Default.Block, contentDescription = null, tint = Color(0xFFFF5252)) },
+                                onClick = {
+                                    showPlayerDropdown = false
+                                    blacklistConfirmTrack = track
+                                }
+                            )
+                            DropdownMenuItem(
+                                text = { Text("Delete track", color = Color(0xFFFF5252)) },
+                                leadingIcon = { Icon(Icons.Default.DeleteOutline, contentDescription = null, tint = Color(0xFFFF5252)) },
+                                onClick = {
+                                    showPlayerDropdown = false
+                                    onDeleteTrack(track)
+                                }
+                            )
+                        }
                     }
                 }
             }
@@ -1225,7 +1222,9 @@ fun NowPlayingSheet(
                 val pillBg = if (isDark) Color.White.copy(alpha = 0.12f) else Color(0x10000000)
                 val pillBorder = if (isDark) Color.White.copy(alpha = 0.08f) else Color(0x18000000)
 
-                // Standalone Like Pill Button (Dislike & Separator completely removed)
+                // Standalone Like Pill Button (Dislike & Separator completely removed).
+                // YouTube entries have no durable like, so the pill is hidden for them.
+                if (!isRemoteTrack) {
                 Surface(
                     shape = RoundedCornerShape(20.dp),
                     color = if (isLiked) MusicRed.copy(alpha = 0.22f) else pillBg,
@@ -1254,6 +1253,7 @@ fun NowPlayingSheet(
                             fontWeight = FontWeight.SemiBold
                         )
                     }
+                }
                 }
 
                 Spacer(modifier = Modifier.width(10.dp))
@@ -1953,6 +1953,7 @@ fun NowPlayingSheet(
         // Queue Item Options Modal Bottom Sheet
         if (menuTargetTrack != null) {
             val (targetIndex, targetTrack) = menuTargetTrack!!
+            val targetIsRemote = com.jk.mediaplayer.data.YouTubeMusic.videoIdOf(targetTrack.path) != null
             ModalBottomSheet(
                 onDismissRequest = { menuTargetTrack = null },
                 containerColor = if (isDark) Color(0xFF1E1E24) else Color(0xFFF2F4F7),
@@ -2088,7 +2089,8 @@ fun NowPlayingSheet(
                         }
                     }
 
-                    // 4. Go to artist
+                    // 4. Go to artist / album — local library only
+                    if (!targetIsRemote) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2152,6 +2154,7 @@ fun NowPlayingSheet(
                         Spacer(modifier = Modifier.width(16.dp))
                         Text("Set as Ringtone", color = playerTextColorPrimary, fontSize = 17.sp)
                     }
+                    }
 
                     // 7. Share
                     Row(
@@ -2159,17 +2162,7 @@ fun NowPlayingSheet(
                             .fillMaxWidth()
                             .clickable {
                                 menuTargetTrack = null
-                                try {
-                                    val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                                        type = "audio/*"
-                                        putExtra(Intent.EXTRA_STREAM, targetTrack.uri)
-                                        putExtra(Intent.EXTRA_TEXT, "${targetTrack.title} - ${targetTrack.artist}")
-                                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                    }
-                                    context.startActivity(Intent.createChooser(shareIntent, "Share Track"))
-                                } catch (e: Exception) {
-                                    AppToast.show("Cannot share track: ${e.message}")
-                                }
+                                shareTrack(context, targetTrack, targetIsRemote)
                             }
                             .padding(vertical = 12.dp),
                         verticalAlignment = Alignment.CenterVertically
@@ -2185,6 +2178,7 @@ fun NowPlayingSheet(
                     }
 
                     // 8. Details
+                    if (!targetIsRemote) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2203,6 +2197,7 @@ fun NowPlayingSheet(
                         )
                         Spacer(modifier = Modifier.width(16.dp))
                         Text("Details", color = playerTextColorPrimary, fontSize = 17.sp)
+                    }
                     }
 
                     // 9. Remove from Queue (the playing entry stays in its own queue)
@@ -2229,6 +2224,7 @@ fun NowPlayingSheet(
                     }
 
                     // 10. Blacklist Song
+                    if (!targetIsRemote) {
                     Row(
                         modifier = Modifier
                             .fillMaxWidth()
@@ -2269,6 +2265,7 @@ fun NowPlayingSheet(
                         )
                         Spacer(modifier = Modifier.width(16.dp))
                         Text("Delete from device", color = Color(0xFFFF5252), fontSize = 17.sp, fontWeight = FontWeight.SemiBold)
+                    }
                     }
 
                     Spacer(modifier = Modifier.height(8.dp))
@@ -3018,3 +3015,34 @@ private object MiuiDarkModeHelper {
 }
 
 
+
+/**
+ * Shares a track the way its source allows: a YouTube entry shares the watch link, a local file
+ * shares the audio itself.
+ */
+private fun shareTrack(
+    context: android.content.Context,
+    track: AudioItem,
+    isRemote: Boolean
+) {
+    try {
+        val shareIntent = if (isRemote) {
+            val videoId = com.jk.mediaplayer.data.YouTubeMusic.videoIdOf(track.path)
+            Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_SUBJECT, "${track.title} - ${track.artist}")
+                putExtra(Intent.EXTRA_TEXT, "https://music.youtube.com/watch?v=$videoId")
+            }
+        } else {
+            Intent(Intent.ACTION_SEND).apply {
+                type = "audio/*"
+                putExtra(Intent.EXTRA_STREAM, track.uri)
+                putExtra(Intent.EXTRA_TEXT, "${track.title} - ${track.artist}")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        }
+        context.startActivity(Intent.createChooser(shareIntent, "Share Track"))
+    } catch (e: Exception) {
+        AppToast.show("Cannot share track: ${e.message}")
+    }
+}

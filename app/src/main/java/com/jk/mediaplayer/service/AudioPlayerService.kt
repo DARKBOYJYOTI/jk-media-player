@@ -112,6 +112,7 @@ class AudioPlayerService : Service() {
     private var remoteRequestToken = 0L
     /** Stops a run of failed resolves from skipping through the whole queue in a loop. */
     private var consecutiveRemoteFailures = 0
+    private val REMOTE_START_TIMEOUT_MS = 15_000L
 
     /** Shuffle "previous" needs real history, random previous is wrong. */
     private val playHistory = ArrayDeque<Int>()
@@ -506,6 +507,8 @@ class AudioPlayerService : Service() {
             _isLoadingRemote.value = true
             remoteRequestToken++
             updateTrackMetadataAndNotification(track, isPlaying = false)
+            // QS and the lock screen must show a loading state instead of a stale paused track.
+            updatePlaybackState(false, 0L, buffering = true)
             playRemoteTrack(track, remoteVideoId, remoteRequestToken)
             return
         }
@@ -604,15 +607,38 @@ class AudioPlayerService : Service() {
             updateTrackMetadataAndNotification(track, isPlaying = true)
             prefetchNextRemoteTrack()
             // Keep the spinner until audio really starts, so the user sees progress through the
-            // network open instead of a dead pause button.
+            // network open instead of a dead pause button, and unblock the LibVLC stall that
+            // otherwise needs a manual play/pause.
             scope.launch {
-                playerController?.isPlaying?.first { it }
-                Log.i(
-                    "AudioPlayerService",
-                    "remote playback started in ${System.currentTimeMillis() - startedAt}ms"
-                )
-                if (requestToken == remoteRequestToken) {
-                    _isLoadingRemote.value = false
+                val controller = playerController ?: return@launch
+                var waitedMs = 0L
+                while (waitedMs < REMOTE_START_TIMEOUT_MS) {
+                    if (controller.isPlaying.value) break
+                    if (requestToken != remoteRequestToken) return@launch
+                    delay(500L)
+                    waitedMs += 500L
+                    if (!controller.isPlaying.value && (waitedMs == 3_000L || waitedMs == 7_000L)) {
+                        // LibVLC opens the stream but occasionally never reports Playing; calling
+                        // play() again is the same action a manual play/pause performed.
+                        Log.w("AudioPlayerService", "kickstarting stalled stream after ${waitedMs}ms")
+                        controller.play()
+                    }
+                }
+                if (requestToken != remoteRequestToken) return@launch
+                _isLoadingRemote.value = false
+                if (controller.isPlaying.value) {
+                    Log.i(
+                        "AudioPlayerService",
+                        "remote playback started in ${System.currentTimeMillis() - startedAt}ms"
+                    )
+                } else {
+                    Log.w("AudioPlayerService", "remote playback stalled after ${waitedMs}ms")
+                    Toast.makeText(
+                        this@AudioPlayerService,
+                        "Could not start this song.",
+                        Toast.LENGTH_SHORT
+                    ).show()
+                    if (_playlist.value.size > 1) playNext() else controller.stop()
                 }
             }
         }
@@ -815,6 +841,8 @@ class AudioPlayerService : Service() {
 
     fun toggleLike() {
         val track = _currentTrack.value ?: return
+        // YouTube entries are not part of the on-device library, so there is no durable like.
+        if (YouTubeMusic.videoIdOf(track.path) != null) return
         toggleFavorite(track.id)
     }
 
@@ -991,33 +1019,47 @@ class AudioPlayerService : Service() {
         )
     }
 
-    private fun updatePlaybackState(isPlaying: Boolean, customPosition: Long = -1L) {
-        val state = if (isPlaying) PlaybackStateCompat.STATE_PLAYING else PlaybackStateCompat.STATE_PAUSED
+    private fun updatePlaybackState(
+        isPlaying: Boolean,
+        customPosition: Long = -1L,
+        buffering: Boolean = false
+    ) {
+        val state = when {
+            buffering -> PlaybackStateCompat.STATE_BUFFERING
+            isPlaying -> PlaybackStateCompat.STATE_PLAYING
+            else -> PlaybackStateCompat.STATE_PAUSED
+        }
         val position = if (customPosition >= 0L) customPosition else (playerController?.currentTime?.value ?: 0L)
         val track = _currentTrack.value
-        val isFav = if (track != null) prefsManager.isFavorite(track.id) else false
+        // Likes only exist for tracks in the on-device library; a YouTube entry has no durable id,
+        // so the like action is left out of the system UI for it.
+        val isLocalTrack = track != null && YouTubeMusic.videoIdOf(track.path) == null
+        val isFav = if (track != null && isLocalTrack) prefsManager.isFavorite(track.id) else false
         val likeIcon = if (isFav) R.drawable.ic_notif_favorite else R.drawable.ic_notif_favorite_border
-        val likeCustomAction = PlaybackStateCompat.CustomAction.Builder(
-            ACTION_LIKE,
-            if (isFav) "Unlike" else "Like",
-            likeIcon
-        ).build()
+        val likeCustomAction = if (isLocalTrack) {
+            PlaybackStateCompat.CustomAction.Builder(
+                ACTION_LIKE,
+                if (isFav) "Unlike" else "Like",
+                likeIcon
+            ).build()
+        } else {
+            null
+        }
+
+        val builder = PlaybackStateCompat.Builder()
+            .setActions(
+                PlaybackStateCompat.ACTION_PLAY or
+                        PlaybackStateCompat.ACTION_PAUSE or
+                        PlaybackStateCompat.ACTION_PLAY_PAUSE or
+                        PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
+                        PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
+                        PlaybackStateCompat.ACTION_SEEK_TO
+            )
+            .setState(state, position, if (isPlaying) 1.0f else 0.0f, android.os.SystemClock.elapsedRealtime())
+        likeCustomAction?.let(builder::addCustomAction)
 
         mediaSession?.isActive = true
-        mediaSession?.setPlaybackState(
-            PlaybackStateCompat.Builder()
-                .setActions(
-                    PlaybackStateCompat.ACTION_PLAY or
-                            PlaybackStateCompat.ACTION_PAUSE or
-                            PlaybackStateCompat.ACTION_PLAY_PAUSE or
-                            PlaybackStateCompat.ACTION_SKIP_TO_NEXT or
-                            PlaybackStateCompat.ACTION_SKIP_TO_PREVIOUS or
-                            PlaybackStateCompat.ACTION_SEEK_TO
-                )
-                .addCustomAction(likeCustomAction)
-                .setState(state, position, if (isPlaying) 1.0f else 0.0f, android.os.SystemClock.elapsedRealtime())
-                .build()
-        )
+        mediaSession?.setPlaybackState(builder.build())
     }
 
     private fun createNotificationChannel() {

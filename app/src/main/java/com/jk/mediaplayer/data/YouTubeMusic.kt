@@ -16,6 +16,7 @@ import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQu
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeStreamLinkHandlerFactory
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
+import org.schabi.newpipe.extractor.stream.DeliveryMethod
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -64,6 +65,8 @@ object YouTubeMusic {
     private val streamCache = ConcurrentHashMap<String, CachedStream>()
 
     private data class CachedStream(val stream: ResolvedStream, val expiresAt: Long)
+
+    private data class Candidate(val url: String, val label: String)
 
     @Suppress("UNUSED_PARAMETER")
     fun init(context: Context) {
@@ -142,13 +145,21 @@ object YouTubeMusic {
                     linkHandler
                 )
                 extractor.fetchPage()
+                val audioStreams = extractor.audioStreams.filter { it.isUrl && it.content.isNotBlank() }
+                // Progressive HTTP answers a plain range request, which LibVLC opens far more
+                // reliably than a fragmented DASH track. Playback stalls on the highest bitrate
+                // DASH entry were exactly the songs that needed several play/pause taps.
+                val ordered = audioStreams.sortedWith(
+                    compareBy<org.schabi.newpipe.extractor.stream.AudioStream> {
+                        if (it.deliveryMethod == DeliveryMethod.PROGRESSIVE_HTTP) 0 else 1
+                    }.thenByDescending { it.averageBitrate }
+                )
                 val candidates = buildList {
-                    extractor.audioStreams
-                        .filter { it.isUrl && it.content.isNotBlank() }
-                        .sortedByDescending { it.averageBitrate }
-                        .forEach { add(it.content) }
-                    extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { add(it) }
-                }.distinct()
+                    ordered.forEach {
+                        add(Candidate(it.content, "${it.deliveryMethod}:${it.averageBitrate}kbps"))
+                    }
+                    extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { add(Candidate(it, "HLS")) }
+                }.distinctBy { it.url }
                 if (candidates.isEmpty()) {
                     Log.w(TAG, "no audio streams for $videoId")
                     return@withContext null
@@ -156,16 +167,16 @@ object YouTubeMusic {
                 // YouTube hands out URLs that can answer 403 for a client mismatch, and some
                 // videos only work on a lower bitrate format. Probe until one really responds.
                 for (candidate in candidates.take(MAX_STREAM_CANDIDATES)) {
-                    if (isReachable(candidate)) {
+                    if (isReachable(candidate.url)) {
                         // Play the URL with the user agent the extractor used: googlevideo ties
                         // the signature to it, and a mismatch is throttled or rejected.
                         val userAgent = YouTubeDownloader.rememberedUserAgent() ?: STREAM_USER_AGENT
-                        val resolved = ResolvedStream(candidate, userAgent)
+                        val resolved = ResolvedStream(candidate.url, userAgent)
                         streamCache[videoId] = CachedStream(resolved, now + STREAM_CACHE_TTL_MS)
                         Log.i(
                             TAG,
                             "resolved $videoId in ${System.currentTimeMillis() - resolveStart}ms " +
-                                "(${candidates.size} candidates)"
+                                "(${candidates.size} candidates, picked ${candidate.label})"
                         )
                         return@withContext resolved
                     }

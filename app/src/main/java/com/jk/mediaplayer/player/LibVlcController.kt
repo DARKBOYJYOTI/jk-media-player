@@ -122,7 +122,12 @@ class LibVlcController(
     private var playbackStartTimeMs: Long = 0L
 
     private val playerEventListener = MediaPlayer.EventListener { event ->
-        Log.i(AUDIO_DIAG_TAG, "LibVLC event: type=${event.type}")
+        // Buffering floods at every percent; log only milestones so the useful events stay readable.
+        val noisyBuffering = event.type == MediaPlayer.Event.Buffering &&
+            event.buffering > 0f && event.buffering < 100f && event.buffering % 10f != 0f
+        if (!noisyBuffering) {
+            Log.i(AUDIO_DIAG_TAG, "LibVLC event: type=${event.type}")
+        }
         when (event.type) {
             MediaPlayer.Event.Playing -> {
                 Log.i(AUDIO_DIAG_TAG, "LibVLC Event Playing")
@@ -573,14 +578,11 @@ class LibVlcController(
                 pendingResumePositionMs = resumePositionMs
             }
             if (isOnlineStream) {
-                media.addOption(":network-caching=2000")
+                // Audio-only playback has no video track to open, so no :no-video option is
+                // needed. A slightly shorter cache starts the song noticeably faster.
+                media.addOption(":network-caching=${if (audioOnly) 1500 else 2000}")
                 httpHeaders["User-Agent"]?.let { media.addOption(":http-user-agent=$it") }
                 httpHeaders["Referer"]?.let { media.addOption(":http-referrer=$it") }
-                if (audioOnly) {
-                    // Remote audio streams carry no file extension, so the local audio branch
-                    // below cannot detect them. Force the video output off explicitly.
-                    media.addOption(":no-video")
-                }
                 if (!username.isNullOrBlank()) {
                     media.addOption(":http-user=$username")
                     media.addOption(":rtsp-user=$username")
