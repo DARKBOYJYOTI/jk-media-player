@@ -123,6 +123,8 @@ class AudioPlayerService : Service() {
     /** Tapping previous after this point restarts the current track. */
     private val previousRestartThresholdMs = 3000L
     private var currentArtBitmap: Bitmap? = null
+    /** Last rendered notification state; identical states skip the rebuild and startForeground(). */
+    private var lastNotificationKey: String? = null
 
     val repeatMode = MutableStateFlow(0) // 0 = Off, 1 = Repeat All, 2 = Repeat One
     val isShuffle = MutableStateFlow(false)
@@ -1091,6 +1093,22 @@ class AudioPlayerService : Service() {
     }
 
     private fun showNotification(track: AudioItem, isPlaying: Boolean, artBitmap: Bitmap? = currentArtBitmap) {
+        // Rebuilding the notification on every isPlaying emission called startForeground() and
+        // re-read the favourite state on the main thread for nothing. The key covers everything
+        // the visible card renders, so identical states skip the whole update.
+        val isFav = prefsManager.isFavorite(track.id)
+        val notificationKey = buildString {
+            append(track.id).append('|')
+            append(track.title).append('|')
+            append(track.artist).append('|')
+            append(track.album).append('|')
+            append(isPlaying).append('|')
+            append(isFav).append('|')
+            append(artBitmap?.let { System.identityHashCode(it) } ?: 0)
+        }
+        if (notificationKey == lastNotificationKey) return
+        lastNotificationKey = notificationKey
+
         val openAppIntent = Intent(this, MainActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_SINGLE_TOP
             // Tapping the QS / lock screen player should land directly on the full player.
@@ -1119,7 +1137,6 @@ class AudioPlayerService : Service() {
             buildMediaPendingIntent(ACTION_PREV)
         )
 
-        val isFav = prefsManager.isFavorite(track.id)
         val likeIcon = if (isFav) R.drawable.ic_notif_favorite else R.drawable.ic_notif_favorite_border
         val likeAction = NotificationCompat.Action(
             likeIcon,
@@ -1232,6 +1249,8 @@ class AudioPlayerService : Service() {
     override fun onDestroy() {
         super.onDestroy()
         if (instance == this) instance = null
+        // A restarted service must post its notification again.
+        lastNotificationKey = null
         AudioSession.close(this)
         abandonAudioFocus()
         if (isNoisyReceiverRegistered) {
