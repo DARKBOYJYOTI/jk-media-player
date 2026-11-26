@@ -29,6 +29,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -184,6 +185,13 @@ fun SearchScreen(
     var ytQuery by remember { mutableStateOf("") }
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
+    // Starting playback opens the full player, so the field must give up focus as well as hide
+    // the keyboard; otherwise the IME slides back over the player after recomposition.
+    val dismissInput: () -> Unit = {
+        keyboardController?.hide()
+        focusManager.clearFocus(force = true)
+    }
 
     LaunchedEffect(Unit) {
         focusRequester.requestFocus()
@@ -477,7 +485,7 @@ fun SearchScreen(
                 isDark = isDark,
                 textColorPrimary = textColorPrimary,
                 textColorSecondary = textColorSecondary,
-                onPlay = onPlayYouTube,
+                onPlay = { list, index -> dismissInput(); onPlayYouTube(list, index) },
                 onPlayNext = onYouTubePlayNext,
                 onAddToQueue = onYouTubeAddToQueue,
                 bottomContentPadding = bottomContentPadding
@@ -574,7 +582,7 @@ fun SearchScreen(
                                     fontWeight = FontWeight.Bold,
                                     modifier = Modifier
                                         .clip(RoundedCornerShape(8.dp))
-                                        .clickable { onTrackClick(filteredTracks, 0) }
+                                        .clickable { dismissInput(); onTrackClick(filteredTracks, 0) }
                                         .padding(4.dp)
                                 )
                             }
@@ -586,7 +594,7 @@ fun SearchScreen(
                                 track = track,
                                 isPlayingThis = track.id == currentTrack?.id,
                                 isPlaying = isPlaying,
-                                onClick = { onTrackClick(filteredTracks, index) },
+                                onClick = { dismissInput(); onTrackClick(filteredTracks, index) },
                                 onPlayNext = onPlayNext,
                                 onAddToQueue = onAddToQueue,
                                 onGoToAlbum = { albTrack ->
@@ -845,7 +853,7 @@ fun SearchScreen(
                                 isDark = isDark,
                                 textColorPrimary = textColorPrimary,
                                 textColorSecondary = textColorSecondary,
-                                onClick = { onPlayYouTube(ytResults, index) },
+                                onClick = { dismissInput(); onPlayYouTube(ytResults, index) },
                                 onPlayNext = { onYouTubePlayNext(track) },
                                 onAddToQueue = { onYouTubeAddToQueue(track) }
                             )
