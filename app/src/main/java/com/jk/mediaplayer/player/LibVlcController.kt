@@ -465,12 +465,12 @@ class LibVlcController(
 
     fun playMedia(
         path: String,
-        uri: Uri?,
-        resumePositionMs: Long,
-        username: String?,
-        password: String?,
-        httpHeaders: Map<String, String>,
-        audioOnly: Boolean
+        uri: Uri? = null,
+        resumePositionMs: Long = 0L,
+        username: String? = null,
+        password: String? = null,
+        httpHeaders: Map<String, String> = emptyMap(),
+        audioOnly: Boolean = false
     ) {
         val vlc = libVLC ?: return
         // A pause fade left running by the previous track must never act on the media that is
@@ -828,7 +828,7 @@ class LibVlcController(
     }
 
     /** Fast temporary level change (audio focus ducking) that keeps the user's logical volume. */
-    fun rampVolume(targetVolume: Int, durationMs: Long) {
+    fun rampVolume(targetVolume: Int, durationMs: Long = 90L) {
         val player = mediaPlayer ?: return
         if (pendingPause) return
         cancelVolumeRamp()
