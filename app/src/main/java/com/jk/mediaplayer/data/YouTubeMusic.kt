@@ -14,6 +14,7 @@ import org.schabi.newpipe.extractor.services.youtube.extractors.YoutubeStreamExt
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeStreamLinkHandlerFactory
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
+import org.schabi.newpipe.extractor.stream.StreamType
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicBoolean
 
@@ -247,7 +248,8 @@ object YouTubeMusic {
 
     private fun StreamInfoItem.toTrackOrNull(): YouTubeTrack? {
         // A live broadcast has no fixed duration or seekable stream; keep it out of a music list.
-        if (runCatching { isLive }.getOrDefault(false)) return null
+        val type = runCatching { streamType }.getOrNull()
+        if (type == StreamType.LIVE_STREAM || type == StreamType.AUDIO_LIVE_STREAM) return null
         val id = VIDEO_ID_PATTERN.find(url)?.groupValues?.getOrNull(1) ?: return null
         val name = runCatching { name }.getOrNull()?.takeIf { it.isNotBlank() } ?: return null
         val seconds = runCatching { duration }.getOrDefault(0L).coerceAtLeast(0L)
