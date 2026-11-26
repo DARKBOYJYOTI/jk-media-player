@@ -592,8 +592,20 @@ class LibVlcController(
                     return
                 }
             }
+            val isOggOrOpus = !isOnlineStream && (
+                forcedDemux == "ogg" ||
+                    path.endsWith(".opus", true) ||
+                    path.endsWith(".ogg", true) ||
+                    path.endsWith(".oga", true)
+                )
             if (forcedDemux != null) {
-                media.addOption(":demux=$forcedDemux,any")
+                // VLC's native ogg demuxer only timestamps at page boundaries (1 s on Opus),
+                // triggering AudioTrack flushes and underruns after pause/resume. Use FFmpeg's
+                // avformat demuxer for Ogg/Opus music so every 20 ms packet gets an exact PTS.
+                val effectiveDemux = if (!isVideoFlow && forcedDemux == "ogg") "avformat" else forcedDemux
+                media.addOption(":demux=$effectiveDemux,any")
+            } else if (!isVideoFlow && isOggOrOpus) {
+                media.addOption(":demux=avformat,any")
             }
 
             if (resumePositionMs > 1000L) {
@@ -700,6 +712,11 @@ class LibVlcController(
                 // Keep MediaCodec disabled for music playback: probing vendor hardware audio
                 // decoders before falling back to software causes a startup click on local tracks.
                 media.setHWDecoderEnabled(false, false)
+                if (isOggOrOpus) {
+                    // Pair avformat with FFmpeg's software Opus/Vorbis decoder to avoid libopus
+                    // PTS drift flushes in libVLC 3.0.x on Android AudioTrack resume.
+                    media.addOption(":codec=avcodec,all")
+                }
             }
             mediaPlayer?.apply {
                 setEventListener(null)
