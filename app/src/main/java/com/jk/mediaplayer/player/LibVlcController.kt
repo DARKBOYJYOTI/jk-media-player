@@ -114,6 +114,8 @@ class LibVlcController(
     private var lastRequestedVolume: Int = 100
     private var volumeRampJob: Job? = null
     private var pendingPause: Boolean = false
+    /** Bumped whenever playback state changes, so a stale pause fade cannot touch new media. */
+    private var pauseGeneration: Long = 0L
     private var targetAudioSessionId: Int = 0
 
     private var bufferingJob: kotlinx.coroutines.Job? = null
@@ -466,6 +468,12 @@ class LibVlcController(
         audioOnly: Boolean = false
     ) {
         val vlc = libVLC ?: return
+        // A pause fade left running by the previous track must never act on the media that is
+        // about to start: it would drop the volume to zero and pause the new song, which is heard
+        // as "play, duck, play" while the UI still says playing.
+        pauseGeneration++
+        pendingPause = false
+        cancelVolumeRamp()
         stopProgressUpdates()
         playbackWatchdogJob?.cancel()
         playbackWatchdogJob = null
@@ -759,6 +767,7 @@ class LibVlcController(
         val player = mediaPlayer ?: return
         cancelVolumeRamp()
         pendingPause = false
+        pauseGeneration++
         if (player.isPlaying) return
         val state = player.playerState
         val isAtEnd = _totalDuration.value > 0L && _currentTime.value >= _totalDuration.value - 1000L
@@ -791,10 +800,13 @@ class LibVlcController(
         if (!player.isPlaying || pendingPause) return
         cancelVolumeRamp()
         pendingPause = true
+        pauseGeneration++
+        val generation = pauseGeneration
         volumeRampJob = progressScope.launch {
             val start = currentPlayerVolume(lastRequestedVolume)
             rampVolumeInternal(start, 0, 60L)
-            if (!pendingPause) return@launch
+            // A new track started while this fade was running: leave its audio alone.
+            if (!pendingPause || generation != pauseGeneration) return@launch
             try { player.pause() } catch (_: Throwable) {}
             // The stream is silent here, so restoring the logical level is inaudible and the
             // next resume starts from the user's value instead of 0. Read it after the fade so a
@@ -841,6 +853,10 @@ class LibVlcController(
 
     fun stop() {
         val player = mediaPlayer ?: return
+        // Stopping invalidates any fade that is still in flight.
+        pauseGeneration++
+        pendingPause = false
+        cancelVolumeRamp()
         if (player.isPlaying) player.stop()
         _isPlaying.value = false
         try { currentPfd?.close() } catch (_: Exception) {}
