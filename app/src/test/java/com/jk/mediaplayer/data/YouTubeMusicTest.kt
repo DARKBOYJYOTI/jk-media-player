@@ -77,4 +77,12 @@ class YouTubeMusicTest {
         val url = "https://i.ytimg.com/vi/abc/hqdefault.jpg"
         assertEquals(url, YouTubeMusic.upgradeArtwork(url))
     }
+
+    @Test
+    fun `legacy square artwork param is upgraded`() {
+        assertEquals(
+            "https://lh3.googleusercontent.com/cover=w544-h544-c",
+            YouTubeMusic.upgradeArtwork("https://lh3.googleusercontent.com/cover=s120-c")
+        )
+    }
 }

@@ -729,10 +729,7 @@ fun MusicAppRoot(
             val miniPlayerHeightDp = 66.dp
             val miniPlayerHeightPx = with(density) { miniPlayerHeightDp.toPx() }
             val marginAboveNavBarPx = 0f
-            // The search screen covers the bottom navigation, so the card sits lower there
-            // instead of reserving the bar's height as empty space.
-            val bottomReservePx = if (isSearchOpen) 0f else navBarContentHeightPx
-            val collapsedTopOffsetPx = (totalHeightPx - bottomReservePx - navBarsBottomInsetPx - miniPlayerHeightPx - marginAboveNavBarPx).coerceAtLeast(0f)
+            val collapsedTopOffsetPx = (totalHeightPx - navBarContentHeightPx - navBarsBottomInsetPx - miniPlayerHeightPx - marginAboveNavBarPx).coerceAtLeast(0f)
 
             // One gesture owner for the whole screen. As the ancestor of both the library and
             // the player it joins their hit path instead of covering them, so it never steals a

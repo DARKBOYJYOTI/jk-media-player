@@ -572,6 +572,10 @@ class AudioPlayerService : Service() {
             if (resolved == null) {
                 _isLoadingRemote.value = false
                 consecutiveRemoteFailures++
+                Log.w(
+                    "AudioPlayerService",
+                    "remote resolve failed for ${track.title} (${YouTubeMusic.videoIdOf(track.path)})"
+                )
                 Toast.makeText(
                     this@AudioPlayerService,
                     if (consecutiveRemoteFailures < 3) {

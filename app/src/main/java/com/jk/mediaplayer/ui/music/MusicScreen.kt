@@ -474,6 +474,9 @@ fun MusicScreen(
                                     selectedArtist = null
                                     selectedAlbum = null
                                     selectedPlaylist = null
+                                    // The nav bar stays visible under the search screen, so a tab
+                                    // tap must also leave the search view.
+                                    showSearchScreen = false
                                 }
                                 .padding(horizontal = 4.dp)
                         ) {
@@ -924,6 +927,16 @@ fun MusicScreen(
                     scaleOut(targetScale = 0.92f, animationSpec = tween(180, easing = FastOutSlowInEasing)) +
                     slideOutVertically(targetOffsetY = { it / 7 }, animationSpec = tween(180, easing = FastOutSlowInEasing))
         ) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    // Reserve the bottom navigation, so Home / Songs / Albums stay tappable
+                    // under the search results, with the mini player floating above them.
+                    .padding(
+                        bottom = 58.dp +
+                            WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+                    )
+            ) {
             SearchScreen(
                 tracks = tracks,
                 albums = albums,
@@ -964,6 +977,7 @@ fun MusicScreen(
                 bottomContentPadding = if (currentTrack != null) 96.dp else 24.dp,
                 onDismiss = { showSearchScreen = false }
             )
+            }
         }
 
         // Online Network Audio Stream Dialog

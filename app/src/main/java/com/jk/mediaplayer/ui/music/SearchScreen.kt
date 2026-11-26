@@ -342,7 +342,6 @@ fun SearchScreen(
             .fillMaxSize()
             .background(bgColor)
             .statusBarsPadding()
-            .navigationBarsPadding()
     ) {
         // Top Search Header Bar
         Row(
@@ -1123,6 +1122,16 @@ private fun YouTubeTrackRow(
     onAddToQueue: () -> Unit
 ) {
     var showMenu by remember { mutableStateOf(false) }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val artRequest = remember(track.videoId, track.thumbnailUrl) {
+        ImageRequest.Builder(context)
+            .data(track.thumbnailUrl)
+            .crossfade(true)
+            .error(R.drawable.ic_default_album_art)
+            .placeholder(R.drawable.ic_default_album_art)
+            .fallback(R.drawable.ic_default_album_art)
+            .build()
+    }
 
     Row(
         modifier = Modifier
@@ -1137,7 +1146,7 @@ private fun YouTubeTrackRow(
             modifier = Modifier.size(46.dp)
         ) {
             AsyncImage(
-                model = track.thumbnailUrl,
+                model = artRequest,
                 contentDescription = track.title,
                 modifier = Modifier.fillMaxSize(),
                 contentScale = ContentScale.Crop

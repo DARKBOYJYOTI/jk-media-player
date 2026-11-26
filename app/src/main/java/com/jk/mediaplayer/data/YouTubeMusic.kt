@@ -2,6 +2,7 @@ package com.jk.mediaplayer.data
 
 import android.content.Context
 import android.net.Uri
+import android.util.Log
 import com.jk.mediaplayer.model.AudioItem
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -46,6 +47,8 @@ object YouTubeMusic {
     private const val REMOTE_ID_BASE = 2_000_000_000L
     private const val REMOTE_ID_MASK = 0x1FFFFFFFL
     private const val STREAM_CACHE_TTL_MS = 4L * 60L * 60L * 1000L
+    private const val MAX_STREAM_CANDIDATES = 4
+    private const val TAG = "YouTubeMusic"
 
     /**
      * googlevideo rejects requests whose user agent does not match the client that produced the
@@ -109,7 +112,8 @@ object YouTubeMusic {
                     // One malformed row must not sink the whole result page.
                     .mapNotNull { item -> runCatching { item.toTrackOrNull() }.getOrNull() }
                     .take(limit)
-            } catch (_: Throwable) {
+            } catch (t: Throwable) {
+                Log.w(TAG, "search failed for \"$trimmed\": ${t.javaClass.simpleName}: ${t.message}")
                 emptyList()
             }
         }
@@ -132,18 +136,70 @@ object YouTubeMusic {
                     linkHandler
                 )
                 extractor.fetchPage()
-                val best = extractor.audioStreams
-                    .asSequence()
-                    .filter { it.isUrl && it.content.isNotBlank() }
-                    .maxByOrNull { it.averageBitrate }
-                    ?: return@withContext null
-                ResolvedStream(best.content, STREAM_USER_AGENT).also { resolved ->
-                    streamCache[videoId] = CachedStream(resolved, now + STREAM_CACHE_TTL_MS)
+                val candidates = buildList {
+                    extractor.audioStreams
+                        .filter { it.isUrl && it.content.isNotBlank() }
+                        .sortedByDescending { it.averageBitrate }
+                        .forEach { add(it.content) }
+                    extractor.hlsUrl?.takeIf { it.isNotBlank() }?.let { add(it) }
+                }.distinct()
+                if (candidates.isEmpty()) {
+                    Log.w(TAG, "no audio streams for $videoId")
+                    return@withContext null
                 }
-            } catch (_: Throwable) {
+                // YouTube hands out URLs that can answer 403 for a client mismatch, and some
+                // videos only work on a lower bitrate format. Probe until one really responds.
+                for (candidate in candidates.take(MAX_STREAM_CANDIDATES)) {
+                    if (isReachable(candidate)) {
+                        val resolved = ResolvedStream(candidate, STREAM_USER_AGENT)
+                        streamCache[videoId] = CachedStream(resolved, now + STREAM_CACHE_TTL_MS)
+                        return@withContext resolved
+                    }
+                }
+                Log.w(TAG, "no reachable audio stream for $videoId (${candidates.size} candidates)")
+                null
+            } catch (t: Throwable) {
+                Log.w(TAG, "resolve failed for $videoId: ${t.javaClass.simpleName}: ${t.message}")
                 null
             }
         }
+
+    /**
+     * Cheap pre-flight so an unplayable URL never reaches the player as a silent failure.
+     * A HEAD is enough for googlevideo; servers that reject HEAD are retried with a one byte GET.
+     */
+    private fun isReachable(url: String): Boolean {
+        return try {
+            val head = okhttp3.Request.Builder()
+                .url(url)
+                .header("User-Agent", STREAM_USER_AGENT)
+                .head()
+                .build()
+            PROBE_CLIENT.newCall(head).execute().use { response ->
+                if (response.isSuccessful) return true
+                if (response.code != 405 && response.code != 403) return false
+            }
+            val probe = okhttp3.Request.Builder()
+                .url(url)
+                .header("User-Agent", STREAM_USER_AGENT)
+                .header("Range", "bytes=0-0")
+                .build()
+            PROBE_CLIENT.newCall(probe).execute().use { response ->
+                response.isSuccessful || response.code == 206
+            }
+        } catch (t: Throwable) {
+            Log.w(TAG, "probe failed: ${t.javaClass.simpleName}")
+            false
+        }
+    }
+
+    private val PROBE_CLIENT: okhttp3.OkHttpClient by lazy {
+        okhttp3.OkHttpClient.Builder()
+            .connectTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .readTimeout(8, java.util.concurrent.TimeUnit.SECONDS)
+            .followRedirects(true)
+            .build()
+    }
 
     /** Queue path for a YouTube video. Remote entries are recognised by this prefix. */
     fun remotePath(videoId: String): String = PATH_PREFIX + videoId
@@ -174,19 +230,24 @@ object YouTubeMusic {
 
     /**
      * YouTube Music serves square cover art from the googleusercontent CDN with the size baked
-     * into the URL (`=w60-h60-l90-rj`). Search results often carry the 60px variant, which looks
-     * blurry once it fills the player. Rewriting the size parameter asks the same CDN image for a
-     * sharp 544px square. Other hosts are returned unchanged.
+     * into the URL (`=w60-h60-l90-rj`, older `=s120-c`). Search results often carry the 60px
+     * variant, which looks blurry once it fills the player. Rewriting the size parameter asks the
+     * same CDN image for a sharp 544px square. Other hosts are returned unchanged.
      */
     fun upgradeArtwork(url: String): String {
         if (url.isBlank()) return url
         if (!url.contains("googleusercontent.com") && !url.contains("ggpht.com")) return url
-        return THUMB_SIZE_PARAM.replace(url, "=w544-h544")
+        val resized = THUMB_SIZE_PARAM.replace(url, "=w544-h544")
+        if (resized != url) return resized
+        return THUMB_SIZE_PATH.replace(url, "/w544-h544")
     }
 
-    private val THUMB_SIZE_PARAM = Regex("=w\\d+-h\\d+")
+    private val THUMB_SIZE_PARAM = Regex("=[sw]\\d+(?:-h\\d+)?")
+    private val THUMB_SIZE_PATH = Regex("/[sw]\\d+-h\\d+")
 
     private fun StreamInfoItem.toTrackOrNull(): YouTubeTrack? {
+        // A live broadcast has no fixed duration or seekable stream; keep it out of a music list.
+        if (runCatching { isLive }.getOrDefault(false)) return null
         val id = VIDEO_ID_PATTERN.find(url)?.groupValues?.getOrNull(1) ?: return null
         val name = runCatching { name }.getOrNull()?.takeIf { it.isNotBlank() } ?: return null
         val seconds = runCatching { duration }.getOrDefault(0L).coerceAtLeast(0L)
