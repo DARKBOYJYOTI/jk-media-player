@@ -5,6 +5,7 @@ import android.net.Uri
 import android.os.SystemClock
 import android.util.Log
 import com.jk.mediaplayer.data.PreferencesManager
+import com.jk.mediaplayer.BuildConfig
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
@@ -127,6 +128,15 @@ class LibVlcController(
     private var hasEverPlayed: Boolean = false
     private var playbackStartTimeMs: Long = 0L
 
+    // --- Temporary pause/resume stall instrumentation (BuildConfig.AUDIO_DIAG only) ---
+    private val diagEnabled: Boolean = BuildConfig.AUDIO_DIAG
+    private val abConfig: AudioAbConfig by lazy {
+        if (diagEnabled && !isVideoFlow) AudioAbConfig.load(context) else AudioAbConfig()
+    }
+    private var diagProbeJob: Job? = null
+    private var diagPlayCallMs: Long = 0L
+    private var diagFirstTimeChangedLogged: Boolean = false
+
     private val playerEventListener = MediaPlayer.EventListener { event ->
         // Buffering floods at every percent; log only milestones so the useful events stay readable.
         val noisyBuffering = event.type == MediaPlayer.Event.Buffering &&
@@ -137,6 +147,12 @@ class LibVlcController(
         when (event.type) {
             MediaPlayer.Event.Playing -> {
                 Log.i(AUDIO_DIAG_TAG, "LibVLC Event Playing")
+                if (diagEnabled && diagPlayCallMs > 0L) {
+                    Log.i(
+                        AUDIO_DIAG_TAG,
+                        "diag event Playing +${SystemClock.elapsedRealtime() - diagPlayCallMs}ms"
+                    )
+                }
                 isSwitchingMedia = false
                 hasEnded = false
                 hasEverPlayed = true
@@ -204,6 +220,16 @@ class LibVlcController(
                 }
             }
             MediaPlayer.Event.TimeChanged -> {
+                if (diagEnabled && diagPlayCallMs > 0L && !diagFirstTimeChangedLogged &&
+                    event.timeChanged > 0L
+                ) {
+                    diagFirstTimeChangedLogged = true
+                    Log.i(
+                        AUDIO_DIAG_TAG,
+                        "diag event firstTimeChanged +${SystemClock.elapsedRealtime() - diagPlayCallMs}ms " +
+                            "t=${event.timeChanged}"
+                    )
+                }
                 if (event.timeChanged > 0L) {
                     val wasFirstFrame = !hasEverPlayed
                     hasEverPlayed = true
@@ -336,12 +362,25 @@ class LibVlcController(
         // is not part of VLC 3.6 and used to force the safe fallback on every launch.
         // This libvlc build (3.0.22) has no AAudio module, only audiotrack and opensles.
         // Keep the AudioTrack output explicit so the list is not silently downgraded.
-        val audioOutputOption = "--aout=android_audiotrack"
-        val stretchOption = if (isVideoFlow) "--audio-time-stretch" else "--no-audio-time-stretch"
+        // On a measurement build the output, time-stretch, caching and verbosity can be
+        // overridden from audio-ab.txt so the whole A/B matrix runs without a rebuild.
+        val ab = if (isVideoFlow) AudioAbConfig() else abConfig
+        if (diagEnabled && !isVideoFlow) {
+            Log.i(
+                AUDIO_DIAG_TAG,
+                "diag ab-config ${ab.summary()} file=${AudioAbConfig.file(context).absolutePath}"
+            )
+        }
+        val audioOutputOption = "--aout=${ab.aout}"
+        val stretchOption = when {
+            isVideoFlow -> "--audio-time-stretch"
+            ab.timeStretch -> "--audio-time-stretch"
+            else -> "--no-audio-time-stretch"
+        }
         val primaryOptions = arrayListOf(
             audioOutputOption,
             "--avcodec-hw=any",        // Hardware acceleration with fallback to software
-            "--file-caching=400",      // Optimal buffer eliminating choke & initial stall
+            "--file-caching=${ab.fileCachingMs}", // Optimal buffer eliminating choke & initial stall
             "--network-caching=1000",
             stretchOption,            // Pitch correction only where speed control exists
             "--sub-text-scale=100",    // Crisp high-resolution subtitles
@@ -353,11 +392,14 @@ class LibVlcController(
         // bundled build, retry without the optional media options before giving up on them.
         val mediaOnlyOptions = arrayOf("--avcodec-hw=any", "--network-caching=1000", "--audio-time-stretch", "--no-audio-time-stretch")
         val fallbackOptions = arrayListOf(
-            "--aout=android_audiotrack",
-            "--file-caching=400",
+            "--aout=${ab.aout}",
+            "--file-caching=${ab.fileCachingMs}",
             "--subsdec-encoding=UTF-8",
             "--sub-margin=50"
         )
+        if (ab.verbose) {
+            primaryOptions.add("--verbose=2")
+        }
         // The session id must be a global libVLC option. It is registered with change_private()
         // in VLC, so passing it as a per-media ":audiotrack-session-id=" option is silently
         // ignored and the AudioTrack ends up on a different session than our AudioEffects.
@@ -494,7 +536,10 @@ class LibVlcController(
         hasEverPlayed = false
         hasUserSelectedSubtitle = false
         userSelectedSubtitleTrackId = -1
-        playbackStartTimeMs = System.currentTimeMillis()
+        // Elapsed-realtime clock: pause() compares this value against SystemClock.elapsedRealtime()
+        // to decide whether a fade is safe. Mixing it with the wall clock made the difference a
+        // large negative number, so the fade branch never ran.
+        playbackStartTimeMs = SystemClock.elapsedRealtime()
         _isBuffering.value = true
         _encounteredError.value = null
         lastPlayedPath = path
@@ -626,9 +671,9 @@ class LibVlcController(
                     // 150ms starved the AudioTrack on larger local files: output started, the
                     // cache emptied and the sound dipped before it recovered. Seek never dipped
                     // because the cache was already warm.
-                    media.addOption(":file-caching=400")
+                    media.addOption(":file-caching=${abConfig.fileCachingMs}")
                 } else {
-                    media.addOption(":file-caching=400")
+                    media.addOption(":file-caching=${abConfig.fileCachingMs}")
                 }
                 media.addOption(":network-caching=1000")
             }
@@ -808,10 +853,31 @@ class LibVlcController(
         if (fadeIn > 0L) {
             try { player.volume = 0 } catch (_: Throwable) {}
         }
+        // Measurement build: timestamp the resume, optionally force a clean resync, then sample
+        // the player clock so a stall after the resume is visible in the log.
+        if (diagEnabled && !isVideoFlow) {
+            diagPlayCallMs = SystemClock.elapsedRealtime()
+            diagFirstTimeChangedLogged = false
+            val vlcTime = try { player.time } catch (_: Throwable) { -1L }
+            val vlcVolume = try { player.volume } catch (_: Throwable) { -1 }
+            Log.i(
+                AUDIO_DIAG_TAG,
+                "diag resume play() t=$diagPlayCallMs vlcTime=$vlcTime vol=$vlcVolume " +
+                    "state=${player.playerState} uiTime=${_currentTime.value}"
+            )
+            if (abConfig.resumeSeek) {
+                val target = _currentTime.value
+                if (target > 0L) {
+                    try { player.time = target } catch (_: Throwable) {}
+                    Log.i(AUDIO_DIAG_TAG, "diag resume resync seek to $target ms")
+                }
+            }
+        }
         player.play()
         if (attachedLayout != null) {
             applyResizeMode()
         }
+        if (diagEnabled && !isVideoFlow) startDiagProbe()
         if (fadeIn > 0L) {
             volumeRampJob = progressScope.launch {
                 rampVolumeInternal(0, logical, fadeIn)
@@ -822,6 +888,14 @@ class LibVlcController(
     fun pause() {
         val player = mediaPlayer ?: return
         if (!player.isPlaying || pendingPause) return
+        if (diagEnabled && !isVideoFlow) {
+            val vlcTime = try { player.time } catch (_: Throwable) { -1L }
+            Log.i(
+                AUDIO_DIAG_TAG,
+                "diag pause() t=${SystemClock.elapsedRealtime()} vlcTime=$vlcTime " +
+                    "state=${player.playerState}"
+            )
+        }
         // A pause in the first moment of playback skips the fade: the AudioTrack is still settling
         // and a second volume ramp makes the output restart audibly. With fades disabled the level
         // is left exactly as it is: only the pause command reaches the AudioTrack.
@@ -871,6 +945,57 @@ class LibVlcController(
     private fun currentPlayerVolume(fallback: Int): Int {
         val raw = try { mediaPlayer?.volume ?: -1 } catch (_: Throwable) { -1 }
         return if (raw >= 0) raw else fallback
+    }
+
+    /**
+     * Temporary measurement probe: samples the player clock every 20 ms for 1.5 s after a
+     * resume and reports the first advance plus every gap longer than 60 ms.
+     */
+    private fun startDiagProbe() {
+        val player = mediaPlayer ?: return
+        val startMs = diagPlayCallMs
+        if (startMs <= 0L) return
+        diagProbeJob?.cancel()
+        diagProbeJob = progressScope.launch {
+            var lastPos = -1L
+            var lastChangeMs = startMs
+            var firstAdvanceMs = -1L
+            var maxStallMs = 0L
+            var stalls = 0
+            val endMs = startMs + 1500L
+            while (isActive && SystemClock.elapsedRealtime() < endMs) {
+                delay(20L)
+                val now = SystemClock.elapsedRealtime()
+                val pos = try { player.time } catch (_: Throwable) { -1L }
+                if (pos < 0L) continue
+                if (lastPos < 0L) {
+                    lastPos = pos
+                    lastChangeMs = now
+                    continue
+                }
+                if (pos != lastPos) {
+                    if (firstAdvanceMs < 0L) {
+                        firstAdvanceMs = now - startMs
+                    }
+                    val gap = now - lastChangeMs
+                    if (gap > 60L) {
+                        stalls++
+                        maxStallMs = maxOf(maxStallMs, gap)
+                        Log.i(AUDIO_DIAG_TAG, "diag probe STALL ${gap}ms pos $lastPos -> $pos")
+                    }
+                    lastPos = pos
+                    lastChangeMs = now
+                }
+            }
+            val tail = SystemClock.elapsedRealtime() - lastChangeMs
+            val playing = try { player.isPlaying } catch (_: Throwable) { false }
+            val endPos = try { player.time } catch (_: Throwable) { -1L }
+            Log.i(
+                AUDIO_DIAG_TAG,
+                "diag probe summary firstAdvanceMs=$firstAdvanceMs maxStallMs=$maxStallMs " +
+                    "stalls=$stalls tailSilenceMs=$tail playing=$playing endPos=$endPos"
+            )
+        }
     }
 
     private suspend fun rampVolumeInternal(from: Int, to: Int, durationMs: Long) {

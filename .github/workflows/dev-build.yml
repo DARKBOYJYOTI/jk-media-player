@@ -59,7 +59,8 @@ jobs:
         run: ./gradlew --no-daemon assembleDebug
 
       - name: Build release APKs
-        run: ./gradlew --no-daemon assembleRelease
+        # TEMPORARY: diagnostic build for the pause/resume stall. Revert with the instrumentation.
+        run: ./gradlew --no-daemon -PaudioDiag=true assembleRelease
 
       # One artifact per ABI per variant so a device only downloads its own APK.
       - name: Upload debug armeabi-v7a

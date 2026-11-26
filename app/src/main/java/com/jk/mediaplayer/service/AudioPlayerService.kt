@@ -11,6 +11,8 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
 import android.util.Log
+import android.os.SystemClock
+import com.jk.mediaplayer.BuildConfig
 import android.os.Bundle
 import android.os.PowerManager
 import com.jk.mediaplayer.data.MediaScanner
@@ -165,6 +167,7 @@ class AudioPlayerService : Service() {
 
         scope.launch {
             playerController?.isPlaying?.collect { isPlaying ->
+                val diagStartMs = SystemClock.elapsedRealtime()
                 if (isPlaying) {
                     acquireWakeLock()
                 } else {
@@ -174,6 +177,13 @@ class AudioPlayerService : Service() {
                 }
                 updatePlaybackState(isPlaying)
                 _currentTrack.value?.let { showNotification(it, isPlaying, currentArtBitmap) }
+                if (BuildConfig.AUDIO_DIAG) {
+                    Log.i(
+                        AUDIO_DIAG_TAG,
+                        "diag isPlaying=$isPlaying notification+state " +
+                            "took ${SystemClock.elapsedRealtime() - diagStartMs}ms"
+                    )
+                }
             }
         }
 
@@ -1021,6 +1031,7 @@ class AudioPlayerService : Service() {
         }
         val isCurrentlyPlaying = playerController?.isPlaying?.value == true
         logAudioState("toggle requested wasPlaying=$isCurrentlyPlaying")
+        val diagStartMs = SystemClock.elapsedRealtime()
         if (isCurrentlyPlaying) {
             // Keep audio focus while paused. Abandoning it made Android/MIUI tear the audio route
             // down (Bluetooth especially), so the next play needed ~0.5s before any sound.
@@ -1033,6 +1044,13 @@ class AudioPlayerService : Service() {
             } else {
                 playerController?.togglePlayPause()
             }
+        }
+        if (BuildConfig.AUDIO_DIAG) {
+            Log.i(
+                AUDIO_DIAG_TAG,
+                "diag toggle returned after ${SystemClock.elapsedRealtime() - diagStartMs}ms " +
+                    "(wasPlaying=$isCurrentlyPlaying)"
+            )
         }
     }
 
