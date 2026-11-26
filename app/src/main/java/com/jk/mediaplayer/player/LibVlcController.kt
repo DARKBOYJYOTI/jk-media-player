@@ -144,7 +144,12 @@ class LibVlcController(
                 _isBuffering.value = false
                 _encounteredError.value = null
                 if (mediaPlayer?.volume != lastRequestedVolume) {
-                    mediaPlayer?.volume = lastRequestedVolume
+                    // Do not snap the level while the start ramp is still running; a hard jump
+                    // from a partly faded level is audible as a dip.
+                    val current = mediaPlayer?.volume ?: lastRequestedVolume
+                    if (kotlin.math.abs(current - lastRequestedVolume) > 20) {
+                        mediaPlayer?.volume = lastRequestedVolume
+                    }
                 }
                 startProgressUpdates()
                 if (pendingResumePositionMs > 0L) {
@@ -589,7 +594,7 @@ class LibVlcController(
                 // Audio-only playback has no video track to open, so no :no-video option is
                 // needed. A short cache plus HTTP reconnect starts the song faster and survives a
                 // dropped connection that otherwise looks like an endless buffer.
-                media.addOption(":network-caching=${if (audioOnly) 1000 else 2000}")
+                media.addOption(":network-caching=${if (audioOnly) 800 else 2000}")
                 if (audioOnly) {
                     media.addOption(":http-reconnect")
                 }
@@ -611,7 +616,10 @@ class LibVlcController(
                     path.endsWith(".alac", true) || path.endsWith(".dsd", true)
                 if (isAudioOnly) {
                     media.addOption(":no-video")
-                    media.addOption(":file-caching=150")
+                    // 150ms starved the AudioTrack on larger local files: output started, the
+                    // cache emptied and the sound dipped before it recovered. Seek never dipped
+                    // because the cache was already warm.
+                    media.addOption(":file-caching=400")
                 } else {
                     media.addOption(":file-caching=400")
                 }
@@ -791,7 +799,7 @@ class LibVlcController(
             applyResizeMode()
         }
         volumeRampJob = progressScope.launch {
-            rampVolumeInternal(0, logical, 90L)
+            rampVolumeInternal(0, logical, 40L)
         }
     }
 
