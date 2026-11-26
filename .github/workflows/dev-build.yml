@@ -19,6 +19,12 @@ jobs:
   build:
     name: Build all ABIs
     runs-on: ubuntu-latest
+    env:
+      # Signing material comes from repository secrets and never reaches the source tree.
+      # Debug and release APKs share this key so a new build always updates the previous install.
+      JK_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      JK_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      JK_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
     steps:
       - name: Check out source
         uses: actions/checkout@v4
@@ -31,6 +37,20 @@ jobs:
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
+
+      - name: Decode signing keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [ -z "${KEYSTORE_BASE64:-}" ]; then
+            echo "::error::ANDROID_KEYSTORE_BASE64 is not configured for this repository."
+            exit 1
+          fi
+          keystore="${RUNNER_TEMP}/release.keystore"
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$keystore"
+          chmod 600 "$keystore"
+          echo "JK_KEYSTORE_FILE=$keystore" >> "$GITHUB_ENV"
 
       - name: Unit tests
         run: ./gradlew --no-daemon testDebugUnitTest
@@ -105,3 +125,7 @@ jobs:
           path: app/build/outputs/apk/release/app-x86_64-release.apk
           if-no-files-found: error
           retention-days: 14
+
+      - name: Remove signing material
+        if: ${{ always() }}
+        run: rm -f "${RUNNER_TEMP}/release.keystore"

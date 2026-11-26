@@ -9,6 +9,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.io.BufferedReader
 import java.io.InputStreamReader
@@ -629,7 +630,12 @@ object OnlineMetadataFetcher {
         return null
     }
 
-    suspend fun fetchLyrics(context: Context?, artist: String, title: String): List<LyricsLine> = withContext(Dispatchers.IO) {
+    suspend fun fetchLyrics(
+        context: Context?,
+        artist: String,
+        title: String,
+        durationMs: Long = 0L
+    ): List<LyricsLine> = withContext(Dispatchers.IO) {
         if (title.isBlank()) return@withContext emptyList()
         val cacheKey = "${artist.trim().lowercase()}_${title.trim().lowercase()}"
 
@@ -653,7 +659,7 @@ object OnlineMetadataFetcher {
         }
 
         val cleanTitle = cleanTrackTitle(title)
-        val cleanArtist = artist.replace("Unknown Artist", "").trim()
+        val cleanArtist = cleanChannelName(artist.replace("Unknown Artist", "").trim())
 
         try {
             // 1. Try LRCLIB for real-time synchronized LRC lyrics
@@ -683,6 +689,44 @@ object OnlineMetadataFetcher {
                             PreferencesManager(context).saveLyrics(artist, title, plainLyrics)
                         }
                         return@withContext parsed
+                    }
+                }
+            }
+
+            // 1b. LRCLIB search with a duration match. YouTube Music titles and channel names
+            // rarely match the catalogue exactly, so the exact lookup above often misses.
+            if (cleanTitle.isNotEmpty()) {
+                val searchUrl = "https://lrclib.net/api/search?q=" +
+                    URLEncoder.encode("$cleanTitle $cleanArtist".trim(), "UTF-8")
+                val searchResponse = executeHttpGet(searchUrl)
+                if (searchResponse != null) {
+                    val entries = JSONArray(searchResponse)
+                    val best = (0 until entries.length())
+                        .mapNotNull { entries.optJSONObject(it) }
+                        .filter {
+                            it.optString("syncedLyrics").isNotEmpty() ||
+                                it.optString("plainLyrics").isNotEmpty()
+                        }
+                        .maxByOrNull { candidate ->
+                            val candidateDuration = (candidate.optDouble("duration", 0.0) * 1000.0).toLong()
+                            if (durationMs <= 0L || candidateDuration <= 0L) {
+                                1L
+                            } else {
+                                (30_000L - kotlin.math.abs(candidateDuration - durationMs)).coerceAtLeast(0L)
+                            }
+                        }
+                    if (best != null) {
+                        val synced = best.optString("syncedLyrics")
+                        val plain = best.optString("plainLyrics")
+                        val parsed = if (synced.isNotEmpty()) parseLrcLyrics(synced) else parsePlainLyrics(plain)
+                        if (parsed.isNotEmpty()) {
+                            lyricsMemoryCache.put(cacheKey, parsed)
+                            if (context != null) {
+                                PreferencesManager(context)
+                                    .saveLyrics(artist, title, synced.ifEmpty { plain })
+                            }
+                            return@withContext parsed
+                        }
                     }
                 }
             }
@@ -720,6 +764,18 @@ object OnlineMetadataFetcher {
     fun cleanArtistName(artist: String): String {
         val first = artist.split(artistSplitRegex).firstOrNull() ?: artist
         return first.trim().trim('"', '\'', '(', ')', '[', ']', '{', '}')
+    }
+
+    /**
+     * Turns a YouTube channel name into the artist a lyrics catalogue knows:
+     * "Artist - Topic" and "ArtistVEVO" both become "Artist".
+     */
+    fun cleanChannelName(artist: String): String {
+        var name = artist.trim()
+        name = name.replace(Regex("(?i)\\s*-\\s*topic$"), "")
+        name = name.replace(Regex("(?i)\\s*vevo$"), "")
+        name = name.replace(Regex("(?i)\\s+(official|music|records|channel)$"), "")
+        return cleanArtistName(name)
     }
 
     private fun parseLrcLyrics(lrc: String): List<LyricsLine> {

@@ -53,6 +53,14 @@ android {
     }
 
     buildTypes {
+        debug {
+            // CI hands debug APKs to real devices, so they must carry the same signature as the
+            // release builds. With the runner's throwaway debug key every build was a different
+            // signature, which made every update install fail.
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
+        }
         release {
             // R8 + resource shrinking: debug builds run the app in JIT/interpreter mode which is
             // the main reason playback UI felt janky. Release is AOT compiled and much smaller.

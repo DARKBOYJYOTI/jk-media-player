@@ -257,6 +257,7 @@ fun NowPlayingSheet(
     var onlineArtUrl by remember(track.id) { mutableStateOf<String?>(track.onlineArtUrl) }
     var fetchedLyrics by remember(track.id) { mutableStateOf<List<LyricsLine>>(emptyList()) }
     var isLoadingLyrics by remember(track.id) { mutableStateOf(false) }
+    var lyricsLoaded by remember(track.id) { mutableStateOf(false) }
 
     LaunchedEffect(track.id) {
         // A track that already carries artwork keeps it. YouTube Music results arrive with a
@@ -270,14 +271,27 @@ fun NowPlayingSheet(
                 onlineArtUrl = OnlineMetadataFetcher.fetchAlbumArtUrl(context, track.artist, track.album, track.title)
             }
         }
+    }
+
+    // Lyrics are fetched only when the user opens the lyrics view. Local files and YouTube Music
+    // tracks use the same path, and a resolved result (even an empty one) is never asked for twice.
+    LaunchedEffect(track.id, showLyrics) {
+        if (!showLyrics || lyricsLoaded) return@LaunchedEffect
         val cached = OnlineMetadataFetcher.getCachedLyrics(context, track.artist, track.title)
         if (cached != null) {
             fetchedLyrics = cached
-        } else {
-            isLoadingLyrics = true
-            fetchedLyrics = OnlineMetadataFetcher.fetchLyrics(context, track.artist, track.title)
-            isLoadingLyrics = false
+            lyricsLoaded = true
+            return@LaunchedEffect
         }
+        isLoadingLyrics = true
+        fetchedLyrics = OnlineMetadataFetcher.fetchLyrics(
+            context,
+            track.artist,
+            track.title,
+            track.duration
+        )
+        isLoadingLyrics = false
+        lyricsLoaded = true
     }
 
     // Dynamic ambient background gradient extracted directly from the actual album art (100% OPAQUE)
