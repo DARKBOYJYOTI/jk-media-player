@@ -89,12 +89,6 @@ android {
         compose = true
         buildConfig = true
     }
-    // Temporary diagnostic switch for the pause/resume audio stall. It is enabled only with
-    // -PaudioDiag=true on a measurement build and stays off for every shipped build.
-    val audioDiag = (project.findProperty("audioDiag") as String?)?.toBoolean() ?: false
-    defaultConfig {
-        buildConfigField("boolean", "AUDIO_DIAG", audioDiag.toString())
-    }
     testOptions {
         // Android framework stubs return default values in plain JVM tests, so pure mapping
         // helpers can be tested without an emulator.

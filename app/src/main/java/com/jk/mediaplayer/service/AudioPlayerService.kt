@@ -11,8 +11,6 @@ import android.content.Intent
 import android.content.IntentFilter
 import android.media.AudioManager
 import android.util.Log
-import android.os.SystemClock
-import com.jk.mediaplayer.BuildConfig
 import android.os.Bundle
 import android.os.PowerManager
 import com.jk.mediaplayer.data.MediaScanner
@@ -33,7 +31,6 @@ import androidx.core.app.NotificationCompat
 import com.jk.mediaplayer.R
 import com.jk.mediaplayer.model.AudioItem
 import com.jk.mediaplayer.player.AudioSession
-import com.jk.mediaplayer.player.AudioAbConfig
 import com.jk.mediaplayer.player.LibVlcController
 import com.jk.mediaplayer.ui.MainActivity
 import kotlinx.coroutines.CoroutineScope
@@ -168,24 +165,14 @@ class AudioPlayerService : Service() {
 
         scope.launch {
             playerController?.isPlaying?.collect { isPlaying ->
-                val diagStartMs = SystemClock.elapsedRealtime()
                 if (isPlaying) {
                     acquireWakeLock()
-                } else if (!(BuildConfig.AUDIO_DIAG && diagAbConfig().keepWakeLock)) {
-                    // Pause must drop the wake lock: holding a partial lock while paused drains
-                    // the battery and blocks deep sleep. A measurement build can keep it to test
-                    // whether the resume stall is CPU/media-thread wake-up latency.
+                } else {
+                    // Release the partial wake lock when paused so the device can enter deep sleep.
                     releaseWakeLock()
                 }
                 updatePlaybackState(isPlaying)
                 _currentTrack.value?.let { showNotification(it, isPlaying, currentArtBitmap) }
-                if (BuildConfig.AUDIO_DIAG) {
-                    Log.i(
-                        AUDIO_DIAG_TAG,
-                        "diag isPlaying=$isPlaying notification+state " +
-                            "took ${SystemClock.elapsedRealtime() - diagStartMs}ms"
-                    )
-                }
             }
         }
 
@@ -328,7 +315,6 @@ class AudioPlayerService : Service() {
     private val STARTUP_FOCUS_GRACE_MS = 6_000L
 
     private val audioFocusChangeListener = AudioManager.OnAudioFocusChangeListener { focusChange ->
-        logAudioState("focus=$focusChange")
         val msSinceStart = System.currentTimeMillis() - lastPlayStartTime
         // Vendor ROMs and Bluetooth route changes send a transient loss or duck while the media
         // notification/artwork is rebuilt. Acting on it is heard as the song stopping and starting
@@ -343,7 +329,6 @@ class AudioPlayerService : Service() {
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
                 if (withinStartupGrace) {
-                    logAudioState("ignored transient focus loss ${msSinceStart}ms after start")
                     return@OnAudioFocusChangeListener
                 }
                 hasAudioFocus = false
@@ -355,7 +340,6 @@ class AudioPlayerService : Service() {
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
                 // A duck is not a pause: keep the track running and only dip the level a little.
                 if (withinStartupGrace) {
-                    logAudioState("ignored duck ${msSinceStart}ms after start")
                     return@OnAudioFocusChangeListener
                 }
                 playerController?.rampVolume(70, 120L)
@@ -516,7 +500,6 @@ class AudioPlayerService : Service() {
         val track = tracks[currentIndex]
         _currentTrack.value = track
         lastPlayStartTime = System.currentTimeMillis()
-        logAudioState("playCurrent track=${track.id}")
 
         val remoteVideoId = YouTubeMusic.videoIdOf(track.path)
         if (remoteVideoId != null) {
@@ -1032,8 +1015,6 @@ class AudioPlayerService : Service() {
             return
         }
         val isCurrentlyPlaying = playerController?.isPlaying?.value == true
-        logAudioState("toggle requested wasPlaying=$isCurrentlyPlaying")
-        val diagStartMs = SystemClock.elapsedRealtime()
         if (isCurrentlyPlaying) {
             // Keep audio focus while paused. Abandoning it made Android/MIUI tear the audio route
             // down (Bluetooth especially), so the next play needed ~0.5s before any sound.
@@ -1047,36 +1028,6 @@ class AudioPlayerService : Service() {
                 playerController?.togglePlayPause()
             }
         }
-        if (BuildConfig.AUDIO_DIAG) {
-            Log.i(
-                AUDIO_DIAG_TAG,
-                "diag toggle returned after ${SystemClock.elapsedRealtime() - diagStartMs}ms " +
-                    "(wasPlaying=$isCurrentlyPlaying)"
-            )
-        }
-    }
-
-    /** Measurement-only overrides; parsed once per service instance. */
-    private var diagAbConfigCache: AudioAbConfig? = null
-
-    private fun diagAbConfig(): AudioAbConfig {
-        diagAbConfigCache?.let { return it }
-        val loaded = if (BuildConfig.AUDIO_DIAG) AudioAbConfig.load(this) else AudioAbConfig()
-        diagAbConfigCache = loaded
-        return loaded
-    }
-
-    private fun logAudioState(event: String) {
-        val am = audioManager ?: (getSystemService(Context.AUDIO_SERVICE) as AudioManager).also { audioManager = it }
-        Log.i(
-            AUDIO_DIAG_TAG,
-            "$event playing=${playerController?.isPlaying?.value} " +
-                "buffering=${playerController?.isBuffering?.value} " +
-                "track=${_currentTrack.value?.title} " +
-                "vlcVolume=${playerController?.getVolume()} " +
-                "musicVolume=${am.getStreamVolume(AudioManager.STREAM_MUSIC)}/${am.getStreamMaxVolume(AudioManager.STREAM_MUSIC)} " +
-                "focusHeld=$hasAudioFocus resumeOnGain=$resumeOnFocusGain"
-        )
     }
 
     private fun updatePlaybackState(
