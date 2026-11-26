@@ -579,8 +579,12 @@ class LibVlcController(
             }
             if (isOnlineStream) {
                 // Audio-only playback has no video track to open, so no :no-video option is
-                // needed. A slightly shorter cache starts the song noticeably faster.
-                media.addOption(":network-caching=${if (audioOnly) 1500 else 2000}")
+                // needed. A short cache plus HTTP reconnect starts the song faster and survives a
+                // dropped connection that otherwise looks like an endless buffer.
+                media.addOption(":network-caching=${if (audioOnly) 1000 else 2000}")
+                if (audioOnly) {
+                    media.addOption(":http-reconnect")
+                }
                 httpHeaders["User-Agent"]?.let { media.addOption(":http-user-agent=$it") }
                 httpHeaders["Referer"]?.let { media.addOption(":http-referrer=$it") }
                 if (!username.isNullOrBlank()) {

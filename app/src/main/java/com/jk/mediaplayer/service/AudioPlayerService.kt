@@ -112,7 +112,8 @@ class AudioPlayerService : Service() {
     private var remoteRequestToken = 0L
     /** Stops a run of failed resolves from skipping through the whole queue in a loop. */
     private var consecutiveRemoteFailures = 0
-    private val REMOTE_START_TIMEOUT_MS = 15_000L
+    private val REMOTE_START_TIMEOUT_MS = 12_000L
+    private val MAX_PLAYBACK_ATTEMPTS = 3
 
     /** Shuffle "previous" needs real history, random previous is wrong. */
     private val playHistory = ArrayDeque<Int>()
@@ -584,79 +585,92 @@ class AudioPlayerService : Service() {
      */
     private fun playRemoteTrack(track: AudioItem, videoId: String, requestToken: Long) {
         scope.launch {
-            val resolved = YouTubeMusic.resolveAudio(videoId)
-            // A newer request, or a different track, always wins over a late resolve.
-            if (requestToken != remoteRequestToken || _currentTrack.value?.id != track.id) return@launch
-            if (resolved == null) {
-                _isLoadingRemote.value = false
-                consecutiveRemoteFailures++
-                Log.w(
-                    "AudioPlayerService",
-                    "remote resolve failed for ${track.title} (${YouTubeMusic.videoIdOf(track.path)})"
+            val controller = playerController
+            val usedUrls = mutableSetOf<String>()
+            var attempt = 0
+            while (attempt < MAX_PLAYBACK_ATTEMPTS) {
+                attempt++
+                // A URL that reaches the player but never starts is fed back so the next best
+                // candidate is tried instead of skipping the song.
+                val resolved = YouTubeMusic.resolveAudio(videoId, usedUrls)
+                // A newer request, or a different track, always wins over a late resolve.
+                if (requestToken != remoteRequestToken || _currentTrack.value?.id != track.id) return@launch
+                if (resolved == null) break
+                usedUrls += resolved.url
+                val startedAt = System.currentTimeMillis()
+                controller?.playMedia(
+                    path = resolved.url,
+                    uri = Uri.parse(resolved.url),
+                    httpHeaders = mapOf("User-Agent" to resolved.userAgent),
+                    audioOnly = true
                 )
-                Toast.makeText(
-                    this@AudioPlayerService,
-                    if (consecutiveRemoteFailures < 3) {
-                        "Could not play this song. Trying the next one."
-                    } else {
-                        "YouTube Music is not responding. Playback stopped."
-                    },
-                    Toast.LENGTH_SHORT
-                ).show()
-                if (consecutiveRemoteFailures < 3 && _playlist.value.size > 1) {
-                    playNext()
-                } else {
-                    consecutiveRemoteFailures = 0
-                    playerController?.stop()
-                }
-                return@launch
-            }
-            consecutiveRemoteFailures = 0
-            val startedAt = System.currentTimeMillis()
-            playerController?.playMedia(
-                path = resolved.url,
-                uri = Uri.parse(resolved.url),
-                httpHeaders = mapOf("User-Agent" to resolved.userAgent),
-                audioOnly = true
-            )
-            updateTrackMetadataAndNotification(track, isPlaying = true)
-            prefetchNextRemoteTrack()
-            // Keep the spinner until audio really starts, so the user sees progress through the
-            // network open instead of a dead pause button, and unblock the LibVLC stall that
-            // otherwise needs a manual play/pause.
-            scope.launch {
-                val controller = playerController ?: return@launch
-                var waitedMs = 0L
-                while (waitedMs < REMOTE_START_TIMEOUT_MS) {
-                    if (controller.isPlaying.value) break
-                    if (requestToken != remoteRequestToken) return@launch
-                    delay(500L)
-                    waitedMs += 500L
-                    if (!controller.isPlaying.value && (waitedMs == 3_000L || waitedMs == 7_000L)) {
-                        // LibVLC opens the stream but occasionally never reports Playing; calling
-                        // play() again is the same action a manual play/pause performed.
-                        Log.w("AudioPlayerService", "kickstarting stalled stream after ${waitedMs}ms")
-                        controller.play()
-                    }
-                }
+                updateTrackMetadataAndNotification(track, isPlaying = true)
+                val started = awaitPlaybackStart(controller, requestToken)
                 if (requestToken != remoteRequestToken) return@launch
-                _isLoadingRemote.value = false
-                if (controller.isPlaying.value) {
+                if (started) {
+                    _isLoadingRemote.value = false
+                    consecutiveRemoteFailures = 0
+                    prefetchNextRemoteTrack()
                     Log.i(
                         "AudioPlayerService",
-                        "remote playback started in ${System.currentTimeMillis() - startedAt}ms"
+                        "remote playback started in ${System.currentTimeMillis() - startedAt}ms " +
+                            "(attempt $attempt)"
                     )
-                } else {
-                    Log.w("AudioPlayerService", "remote playback stalled after ${waitedMs}ms")
-                    Toast.makeText(
-                        this@AudioPlayerService,
-                        "Could not start this song.",
-                        Toast.LENGTH_SHORT
-                    ).show()
-                    if (_playlist.value.size > 1) playNext() else controller.stop()
+                    return@launch
                 }
+                Log.w("AudioPlayerService", "candidate $attempt stalled, trying the next one")
+                controller?.stop()
+                delay(400L)
+            }
+
+            _isLoadingRemote.value = false
+            if (requestToken != remoteRequestToken) return@launch
+            consecutiveRemoteFailures++
+            Log.w(
+                "AudioPlayerService",
+                "remote resolve failed for ${track.title} (${YouTubeMusic.videoIdOf(track.path)})"
+            )
+            Toast.makeText(
+                this@AudioPlayerService,
+                if (consecutiveRemoteFailures < 3) {
+                    "Could not play this song. Trying the next one."
+                } else {
+                    "YouTube Music is not responding. Playback stopped."
+                },
+                Toast.LENGTH_SHORT
+            ).show()
+            if (consecutiveRemoteFailures < 3 && _playlist.value.size > 1) {
+                playNext()
+            } else {
+                consecutiveRemoteFailures = 0
+                controller?.stop()
             }
         }
+    }
+
+    /**
+     * Waits for the first audible frame, kickstarting LibVLC when it opens a stream but never
+     * reports Playing. Returns false when the stream stalls or the request became stale.
+     */
+    private suspend fun awaitPlaybackStart(
+        controller: LibVlcController?,
+        requestToken: Long
+    ): Boolean {
+        if (controller == null) return false
+        var waitedMs = 0L
+        while (waitedMs < REMOTE_START_TIMEOUT_MS) {
+            if (controller.isPlaying.value) return true
+            if (requestToken != remoteRequestToken) return false
+            delay(500L)
+            waitedMs += 500L
+            if (!controller.isPlaying.value && (waitedMs == 3_000L || waitedMs == 7_000L)) {
+                // LibVLC opens the stream but occasionally never reports Playing; calling play()
+                // again is the same action a manual play/pause performed.
+                Log.w("AudioPlayerService", "kickstarting stalled stream after ${waitedMs}ms")
+                controller.play()
+            }
+        }
+        return controller.isPlaying.value
     }
 
     /** Warm the next remote URL so a track change does not wait on the network. */

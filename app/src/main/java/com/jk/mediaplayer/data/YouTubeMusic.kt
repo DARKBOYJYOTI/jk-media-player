@@ -126,14 +126,24 @@ object YouTubeMusic {
             }
         }
 
-    /** Resolve a playable audio URL for a video id. Returns null on any failure. */
-    suspend fun resolveAudio(videoId: String): ResolvedStream? =
+    /**
+     * Resolve a playable audio URL for a video id. Returns null on any failure.
+     *
+     * [skipUrls] is used by playback failover: a URL that reaches the player but never starts is
+     * passed back here so the next best candidate is tried instead of skipping the whole song.
+     */
+    suspend fun resolveAudio(
+        videoId: String,
+        skipUrls: Set<String> = emptySet()
+    ): ResolvedStream? =
         withContext(Dispatchers.IO) {
             if (videoId.isBlank()) return@withContext null
             val now = System.currentTimeMillis()
-            streamCache[videoId]?.let { cached ->
-                if (cached.expiresAt > now) return@withContext cached.stream
-                streamCache.remove(videoId)
+            if (skipUrls.isEmpty()) {
+                streamCache[videoId]?.let { cached ->
+                    if (cached.expiresAt > now) return@withContext cached.stream
+                    streamCache.remove(videoId)
+                }
             }
             try {
                 ensureInitialized()
@@ -167,16 +177,20 @@ object YouTubeMusic {
                 // YouTube hands out URLs that can answer 403 for a client mismatch, and some
                 // videos only work on a lower bitrate format. Probe until one really responds.
                 for (candidate in candidates.take(MAX_STREAM_CANDIDATES)) {
+                    if (candidate.url in skipUrls) continue
                     if (isReachable(candidate.url)) {
                         // Play the URL with the user agent the extractor used: googlevideo ties
                         // the signature to it, and a mismatch is throttled or rejected.
                         val userAgent = YouTubeDownloader.rememberedUserAgent() ?: STREAM_USER_AGENT
                         val resolved = ResolvedStream(candidate.url, userAgent)
-                        streamCache[videoId] = CachedStream(resolved, now + STREAM_CACHE_TTL_MS)
+                        if (skipUrls.isEmpty()) {
+                            streamCache[videoId] = CachedStream(resolved, now + STREAM_CACHE_TTL_MS)
+                        }
                         Log.i(
                             TAG,
                             "resolved $videoId in ${System.currentTimeMillis() - resolveStart}ms " +
-                                "(${candidates.size} candidates, picked ${candidate.label})"
+                                "(${candidates.size} candidates, picked ${candidate.label}, " +
+                                "skipped ${skipUrls.size})"
                         )
                         return@withContext resolved
                     }
