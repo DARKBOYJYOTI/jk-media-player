@@ -891,11 +891,18 @@ private fun FolderRowItem(
     onClick: () -> Unit,
     onMoreClick: () -> Unit
 ) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(12.dp))
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onMoreClick()
+                }
+            )
             .padding(horizontal = 20.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
@@ -949,6 +956,7 @@ private fun FolderRowItem(
 /**
  * Folder Card for Grid View (with 3-dot menu & long press)
  */
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun FolderCard(
     folder: VideoFolder,
@@ -956,6 +964,7 @@ private fun FolderCard(
     onClick: () -> Unit,
     onMoreClick: () -> Unit
 ) {
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Surface(
         shape = RoundedCornerShape(16.dp),
         color = MaterialTheme.colorScheme.surface,
@@ -963,7 +972,13 @@ private fun FolderCard(
         modifier = Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptics.performHapticFeedback(androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress)
+                    onMoreClick()
+                }
+            )
     ) {
         Column(
             modifier = Modifier.padding(14.dp)
@@ -1182,6 +1197,7 @@ private fun VideoRowItem(
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun FolderActionDialog(
     folder: VideoFolder,
@@ -1190,76 +1206,97 @@ private fun FolderActionDialog(
     onDelete: () -> Unit,
     onBlacklist: () -> Unit = {}
 ) {
-    Dialog(
+    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+    ModalBottomSheet(
         onDismissRequest = onDismiss,
-        properties = DialogProperties(usePlatformDefaultWidth = false)
+        sheetState = sheetState,
+        containerColor = MaterialTheme.colorScheme.surface,
+        shape = RoundedCornerShape(topStart = 24.dp, topEnd = 24.dp),
+        dragHandle = { BottomSheetDefaults.DragHandle() }
     ) {
-        Surface(
-            shape = RoundedCornerShape(22.dp),
-            color = MaterialTheme.colorScheme.surface,
-            tonalElevation = 6.dp,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)),
-            modifier = Modifier.fillMaxWidth(0.94f)
+        Column(
+            modifier = Modifier
+                .fillMaxWidth()
+                .navigationBarsPadding()
+                .padding(horizontal = 20.dp)
+                .padding(bottom = 20.dp)
         ) {
-            Column(modifier = Modifier.padding(20.dp)) {
-                Text(
-                    text = folder.name,
-                    fontSize = 17.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Text(
-                    text = "${folder.videoCount} videos • ${folder.totalDurationFormatted}",
-                    fontSize = 13.sp,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.padding(top = 2.dp)
-                )
-
-                HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
-
-                // Details Option
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable(onClick = onDetails)
-                        .padding(vertical = 10.dp, horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Surface(
+                    shape = RoundedCornerShape(12.dp),
+                    color = VideoIndigo.copy(alpha = 0.14f),
+                    modifier = Modifier.size(44.dp)
                 ) {
-                    Icon(Icons.Default.Info, contentDescription = null, tint = VideoIndigo, modifier = Modifier.size(22.dp))
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Text("Details", fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Normal)
+                    Box(contentAlignment = Alignment.Center) {
+                        Icon(
+                            imageVector = Icons.Default.Folder,
+                            contentDescription = null,
+                            tint = VideoIndigo,
+                            modifier = Modifier.size(24.dp)
+                        )
+                    }
                 }
+                Spacer(modifier = Modifier.width(12.dp))
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = folder.name,
+                        fontSize = 17.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = "${folder.videoCount} videos • ${folder.totalDurationFormatted}",
+                        fontSize = 13.sp,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(top = 2.dp)
+                    )
+                }
+            }
 
-                // Blacklist Folder Option
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable(onClick = onBlacklist)
-                        .padding(vertical = 10.dp, horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Block, contentDescription = null, tint = VideoIndigo, modifier = Modifier.size(22.dp))
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Text("Blacklist Folder", fontSize = 17.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Normal)
-                }
+            HorizontalDivider(modifier = Modifier.padding(vertical = 14.dp))
 
-                // Delete Option
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(10.dp))
-                        .clickable(onClick = onDelete)
-                        .padding(vertical = 10.dp, horizontal = 8.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(22.dp))
-                    Spacer(modifier = Modifier.width(14.dp))
-                    Text("Delete Folder", fontSize = 17.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Normal)
-                }
+            // Details Option
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onDetails)
+                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Info, contentDescription = null, tint = VideoIndigo, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(14.dp))
+                Text("Details", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+            }
+
+            // Blacklist Folder Option
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onBlacklist)
+                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Block, contentDescription = null, tint = VideoIndigo, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(14.dp))
+                Text("Blacklist Folder", fontSize = 16.sp, color = MaterialTheme.colorScheme.onSurface, fontWeight = FontWeight.Medium)
+            }
+
+            // Delete Option
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(12.dp))
+                    .clickable(onClick = onDelete)
+                    .padding(vertical = 12.dp, horizontal = 8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = null, tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(22.dp))
+                Spacer(modifier = Modifier.width(14.dp))
+                Text("Delete Folder", fontSize = 16.sp, color = MaterialTheme.colorScheme.error, fontWeight = FontWeight.Medium)
             }
         }
     }

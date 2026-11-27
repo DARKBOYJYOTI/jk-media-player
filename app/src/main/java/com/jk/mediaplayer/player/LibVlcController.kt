@@ -759,6 +759,12 @@ class LibVlcController(
                 if (highColor) {
                     media.addOption(":android-display-chroma=RV32")
                 }
+                // Reset stale dimensions and probe local video dimensions off the UI thread so
+                // Fit / Stretch / Cropped work reliably even on MKVs where currentVideoTrack lags or returns 0.
+                _videoSize.value = Pair(0, 0)
+                if (!isOnlineStream) {
+                    probeLocalVideoSizeAsync(path, uri)
+                }
             } else {
                 // Keep MediaCodec disabled for music playback: probing vendor hardware audio
                 // decoders before falling back to software causes a startup click on local tracks.
@@ -1183,6 +1189,36 @@ class LibVlcController(
         }
     }
 
+
+    private var videoSizeProbeJob: Job? = null
+
+    private fun probeLocalVideoSizeAsync(path: String, uri: Uri?) {
+        videoSizeProbeJob?.cancel()
+        videoSizeProbeJob = progressScope.launch(Dispatchers.IO) {
+            val mmr = android.media.MediaMetadataRetriever()
+            try {
+                if (path.isNotEmpty() && java.io.File(path).exists()) {
+                    mmr.setDataSource(path)
+                } else if (uri != null) {
+                    mmr.setDataSource(context, uri)
+                } else {
+                    return@launch
+                }
+                val rawW = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_WIDTH)?.toIntOrNull() ?: 0
+                val rawH = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_HEIGHT)?.toIntOrNull() ?: 0
+                val rot = mmr.extractMetadata(android.media.MediaMetadataRetriever.METADATA_KEY_VIDEO_ROTATION)?.toIntOrNull() ?: 0
+                if (rawW > 0 && rawH > 0) {
+                    val (w, h) = if (rot == 90 || rot == 270) rawH to rawW else rawW to rawH
+                    if (_videoSize.value.first <= 0 || _videoSize.value.second <= 0) {
+                        _videoSize.value = Pair(w, h)
+                    }
+                }
+            } catch (_: Throwable) {
+            } finally {
+                try { mmr.release() } catch (_: Throwable) {}
+            }
+        }
+    }
 
     fun getVideoWidth(): Int {
         return try {

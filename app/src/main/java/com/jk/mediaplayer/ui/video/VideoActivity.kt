@@ -431,6 +431,11 @@ fun VideoAppRoot(
                                 showSearchPage = false
                                 selectedVideoFolder = folder
                             },
+                            onRefreshLibrary = {
+                                refreshScope.launch {
+                                    videoFolders = MediaScanner.scanVideos(context)
+                                }
+                            },
                             onBack = { showSearchPage = false }
                         )
                     }

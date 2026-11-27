@@ -1914,14 +1914,24 @@ fun GestureVideoPlayerScreen(
         } else {
             16f / 9f
         }
-        // The size flow can lag the first frame, so the stream is asked directly before the
-        // aspect is given up on; otherwise a mode silently stayed at 1:1 on those files.
+        // The size flow can lag or return 0 on some multi-track MKV containers, so fall back to
+        // the stream track query, then the fitted surface_video bounds, and finally 16:9 (never
+        // pictureAspect, which would make Fit / Stretch / Cropped all collapse to 1:1).
         val sourceWidth = if (videoSize.first > 0) videoSize.first else controller.getVideoWidth()
         val sourceHeight = if (videoSize.second > 0) videoSize.second else controller.getVideoHeight()
-        val videoAspect = if (sourceWidth > 0 && sourceHeight > 0) {
-            sourceWidth.toFloat() / sourceHeight.toFloat()
-        } else {
-            pictureAspect
+        val surfaceViewBounds = videoSurfaceLayout?.let { layout ->
+            val v = layout.findViewById<android.view.View>(org.videolan.R.id.surface_video)
+                ?: layout.findViewById(org.videolan.R.id.texture_video)
+            if (v != null && v.width > 0 && v.height > 0 &&
+                (v.width != videoContainerSize.width || v.height != videoContainerSize.height)
+            ) {
+                v.width to v.height
+            } else null
+        }
+        val videoAspect = when {
+            sourceWidth > 0 && sourceHeight > 0 -> sourceWidth.toFloat() / sourceHeight.toFloat()
+            surfaceViewBounds != null -> surfaceViewBounds.first.toFloat() / surfaceViewBounds.second.toFloat()
+            else -> 16f / 9f
         }
         val baseScale = when (currentResizeMode) {
             LibVlcController.ResizeMode.STRETCH ->
