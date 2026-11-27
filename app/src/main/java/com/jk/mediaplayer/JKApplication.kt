@@ -45,8 +45,7 @@ class AudioAlbumArtInterceptor(private val context: Context) : Interceptor {
             }
 
             val resolved = resolveArtwork(
-                knownPath = data.onlineArtUrl
-                    ?: com.jk.mediaplayer.data.YouTubeMusic.artworkFallbackFor(data.path),
+                knownPath = data.onlineArtUrl,
                 artist = data.artist,
                 album = data.album,
                 title = data.title
@@ -181,7 +180,6 @@ class JKApplication : Application(), ImageLoaderFactory {
     override fun onCreate() {
         super.onCreate()
         instance = this
-        com.jk.mediaplayer.data.YouTubeMusic.init(this)
         CoroutineScope(Dispatchers.IO).launch {
             com.jk.mediaplayer.data.MediaScanner.loadPersistedMusic(this@JKApplication)
             VideoThumbnailCache.clearLegacyThumbnails(this@JKApplication)
