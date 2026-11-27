@@ -487,7 +487,22 @@ class VideoPlayerActivity : ComponentActivity() {
             } else {
                 hideSystemUI()
                 libVlcController.reattachVideoLayout()
-                libVlcController.applyResizeMode()
+                // Wait for the OEM PiP-to-fullscreen window resize animation to settle, then
+                // force-sync LibVLC's SurfaceView bounds so the video never stays stuck at PiP size.
+                window.decorView.post {
+                    if (!isFinishing && !isDestroyed && !isInPipMode) {
+                        hideSystemUI()
+                        libVlcController.forceReattachVideoLayout()
+                        libVlcController.refreshPausedFrame()
+                    }
+                }
+                window.decorView.postDelayed({
+                    if (!isFinishing && !isDestroyed && !isInPipMode) {
+                        hideSystemUI()
+                        libVlcController.forceReattachVideoLayout()
+                        libVlcController.refreshPausedFrame()
+                    }
+                }, 260L)
             }
         }
     }
@@ -1849,6 +1864,15 @@ fun GestureVideoPlayerScreen(
                     fitsSystemWindows = false
                     videoSurfaceLayout = this
                     controller.attachVideoLayout(this)
+                    addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                        val newW = right - left
+                        val newH = bottom - top
+                        val oldW = oldRight - oldLeft
+                        val oldH = oldBottom - oldTop
+                        if (newW > 0 && newH > 0 && (newW != oldW || newH != oldH)) {
+                            controller.updateVideoWindowSize(newW, newH)
+                        }
+                    }
 
                     post {
                         val act = ctx as? VideoPlayerActivity
@@ -1929,40 +1953,8 @@ fun GestureVideoPlayerScreen(
             picture.translationY = picturePanY
         }
 
-        // Hardware-composited display picture profile layer (Vivid / Cinema / Natural).
-        // Under MediaCodec hardware decoding, LibVLC's CPU "adjust" filter is bypassed on opaque
-        // surfaces, so this zero-overhead GPU layer applies Vivid / Cinema instantaneously without
-        // reloading the video. Under SOFTWARE decoding, LibVLC's native adjust filter handles it.
-        val qualityVersion = com.jk.mediaplayer.data.PreferencesManager.videoQualityVersion
-        val activeProfileMode = remember(qualityVersion) { prefs.getVideoEnhancerMode() }
-        val activeHwMode = remember(qualityVersion) { prefs.getVideoHwDecoder() }
-        if (activeHwMode != "SOFTWARE" && activeProfileMode != "STANDARD") {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        when (activeProfileMode) {
-                            "CINEMA" -> androidx.compose.ui.graphics.Brush.radialGradient(
-                                colors = listOf(
-                                    Color(0x14FF9E44),
-                                    Color(0x1CFF9233),
-                                    Color(0x30000000)
-                                )
-                            )
-                            "VIVID" -> androidx.compose.ui.graphics.Brush.verticalGradient(
-                                colors = listOf(
-                                    Color(0x1000D4FF),
-                                    Color(0x0AFFFFFF),
-                                    Color(0x14000000)
-                                )
-                            )
-                            else -> androidx.compose.ui.graphics.Brush.verticalGradient(
-                                colors = listOf(Color.Transparent, Color.Transparent)
-                            )
-                        }
-                    )
-            )
-        }
+        // Picture profiles (Vivid / Cinema / Natural) are applied natively by LibVLC's
+        // pixel-level "adjust" filter (auto-switching to software decoding when active).
 
         if (!isInPip) {
         // Unified Gesture Touch Overlay
@@ -3621,12 +3613,12 @@ fun GestureVideoPlayerScreen(
                                         .weight(1f)
                                         .clip(RoundedCornerShape(12.dp))
                                         .clickable {
-                                            profileMode = mode
-                                            prefs.setVideoEnhancerMode(mode)
-                                            if (hwMode == "SOFTWARE") {
+                                            if (profileMode != mode) {
+                                                profileMode = mode
+                                                prefs.setVideoEnhancerMode(mode)
                                                 (context as? VideoPlayerActivity)?.reloadCurrentVideo()
+                                                AppToast.show("Picture profile: $label")
                                             }
-                                            AppToast.show("Picture profile: $label")
                                         }
                                 ) {
                                     Text(
@@ -3777,7 +3769,6 @@ fun GestureVideoPlayerScreen(
                                     if (profileMode == "STANDARD" && hwMode == "AUTO" && deinterlace == "AUTO" && !highColor) {
                                         AppToast.show("Already using default video settings")
                                     } else {
-                                        val needsReload = hwMode != "AUTO" || deinterlace != "AUTO" || highColor
                                         profileMode = "STANDARD"
                                         hwMode = "AUTO"
                                         deinterlace = "AUTO"
@@ -3786,9 +3777,7 @@ fun GestureVideoPlayerScreen(
                                         prefs.setVideoHwDecoder("AUTO")
                                         prefs.setVideoDeinterlaceMode("AUTO")
                                         prefs.setVideoHighColorQuality(false)
-                                        if (needsReload) {
-                                            (context as? VideoPlayerActivity)?.reloadCurrentVideo()
-                                        }
+                                        (context as? VideoPlayerActivity)?.reloadCurrentVideo()
                                         AppToast.show("Video display settings reset to default")
                                     }
                                 }

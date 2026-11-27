@@ -460,9 +460,52 @@ class LibVlcController(
             if (vout == null || !vout.areViewsAttached()) {
                 mediaPlayer?.attachViews(layout, null, true, false)
             }
+            val w = layout.width
+            val h = layout.height
+            if (w > 0 && h > 0) {
+                mediaPlayer?.vlcVout?.setWindowSize(w, h)
+            }
             mediaPlayer?.setVideoTrackEnabled(true)
             applyResizeMode()
         } catch (e: Throwable) {
+        }
+    }
+
+    /** Updates LibVLC's output window dimensions whenever the video container resizes (e.g. PiP exit or rotation). */
+    fun updateVideoWindowSize(width: Int, height: Int) {
+        if (width <= 0 || height <= 0) return
+        try {
+            val vout = mediaPlayer?.vlcVout ?: return
+            if (vout.areViewsAttached()) {
+                vout.setWindowSize(width, height)
+            }
+            applyResizeMode()
+        } catch (_: Throwable) {
+        }
+    }
+
+    /**
+     * Forces a clean SurfaceView re-attach after PiP restore so OEM window transitions
+     * (e.g. MIUI/HyperOS) cannot leave the picture stuck at the small PiP size in the top-left corner.
+     */
+    fun forceReattachVideoLayout() {
+        val layout = attachedLayout ?: return
+        val player = mediaPlayer ?: return
+        try {
+            val vout = player.vlcVout
+            if (vout.areViewsAttached()) {
+                vout.detachViews()
+            }
+            player.attachViews(layout, null, true, false)
+            val w = layout.width
+            val h = layout.height
+            if (w > 0 && h > 0) {
+                player.vlcVout.setWindowSize(w, h)
+            }
+            player.setVideoTrackEnabled(true)
+            applyResizeMode()
+            layout.requestLayout()
+        } catch (_: Throwable) {
         }
     }
 
@@ -662,17 +705,28 @@ class LibVlcController(
                 }
                 val prefs = PreferencesManager(context)
                 val hwMode = prefs.getVideoHwDecoder()
-                val (hwEnabled, forceHW) = when (hwMode) {
-                    "FORCE_HW" -> Pair(true, true)
-                    "SOFTWARE" -> Pair(false, false)
+                val profileMode = prefs.getVideoEnhancerMode()
+                val highColor = prefs.isVideoHighColorQuality()
+                val deint = prefs.getVideoDeinterlaceMode()
+
+                // LibVLC's pixel-level filters (adjust picture profile, RV32 32-bit chroma, and
+                // yadif/blend deinterlacing) operate on decoded software frames, not opaque
+                // MediaCodec HW surfaces. Automatically switch to software rendering whenever any
+                // of those filters is active so every option applies natively with zero emulation.
+                val needsSoftwarePipeline =
+                    profileMode == "VIVID" ||
+                    profileMode == "CINEMA" ||
+                    highColor ||
+                    deint == "YADIF" ||
+                    deint == "BLEND"
+
+                val (hwEnabled, forceHW) = when {
+                    isLocalAudioFile || hwMode == "SOFTWARE" || needsSoftwarePipeline -> Pair(false, false)
+                    hwMode == "FORCE_HW" -> Pair(true, true)
                     else -> Pair(true, false)
                 }
-                if (isLocalAudioFile) {
-                    media.setHWDecoderEnabled(false, false)
-                } else {
-                    media.setHWDecoderEnabled(hwEnabled, forceHW)
-                }
-                val deint = prefs.getVideoDeinterlaceMode()
+                media.setHWDecoderEnabled(hwEnabled, forceHW)
+
                 when (deint) {
                     "YADIF" -> {
                         media.addOption(":deinterlace=1")
@@ -686,29 +740,23 @@ class LibVlcController(
                         media.addOption(":deinterlace=0")
                     }
                 }
-                // Apply LibVLC's CPU "adjust" filter only under software decoding where it operates
-                // on decoded frames. Under MediaCodec hardware decoding, picture profiles are
-                // applied instantaneously by the player's hardware-composited grading layer without
-                // breaking zero-copy HW output or forcing a software fallback.
-                if (hwMode == "SOFTWARE") {
-                    when (prefs.getVideoEnhancerMode()) {
-                        "VIVID" -> {
-                            media.addOption(":video-filter=adjust")
-                            media.addOption(":contrast=1.10")
-                            media.addOption(":saturation=1.18")
-                            media.addOption(":gamma=0.98")
-                            media.addOption(":brightness=1.02")
-                        }
-                        "CINEMA" -> {
-                            media.addOption(":video-filter=adjust")
-                            media.addOption(":contrast=1.06")
-                            media.addOption(":saturation=0.94")
-                            media.addOption(":gamma=1.06")
-                            media.addOption(":brightness=0.98")
-                        }
+                when (profileMode) {
+                    "VIVID" -> {
+                        media.addOption(":video-filter=adjust")
+                        media.addOption(":contrast=1.10")
+                        media.addOption(":saturation=1.18")
+                        media.addOption(":gamma=0.98")
+                        media.addOption(":brightness=1.02")
+                    }
+                    "CINEMA" -> {
+                        media.addOption(":video-filter=adjust")
+                        media.addOption(":contrast=1.06")
+                        media.addOption(":saturation=0.94")
+                        media.addOption(":gamma=1.06")
+                        media.addOption(":brightness=0.98")
                     }
                 }
-                if (prefs.isVideoHighColorQuality()) {
+                if (highColor) {
                     media.addOption(":android-display-chroma=RV32")
                 }
             } else {

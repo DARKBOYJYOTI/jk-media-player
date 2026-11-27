@@ -386,24 +386,25 @@ fun MusicScreen(
         }
     }
 
-    // One opaque pass for the page background: the accent gradient is pre-blended over the solid
-    // base colour, so no pixel needs alpha blending and the list is never covered twice.
+    // Single continuous full-screen vertical gradient pre-blended over the solid base color
+    // so there is never a hard seam or mid-screen band in light or dark mode.
     val pageSolidColor = if (isDark) Color(0xFF000000) else Color(0xFFF8F9FA)
-    val gradientStops = remember(isDark, dynamicAccentColor) {
+    val gradientColorStops = remember(isDark, dynamicAccentColor) {
         val accent = dynamicAccentColor
         if (isDark) {
-            listOf(
-                accent.copy(alpha = 0.32f).compositeOver(Color.Black),
-                accent.copy(alpha = 0.12f).compositeOver(Color.Black),
-                Color(0xFF090A0F),
-                Color(0xFF000000)
+            arrayOf(
+                0.00f to accent.copy(alpha = 0.30f).compositeOver(Color.Black),
+                0.20f to accent.copy(alpha = 0.11f).compositeOver(Color.Black),
+                0.44f to Color(0xFF090A0F),
+                0.62f to Color(0xFF000000),
+                1.00f to Color(0xFF000000)
             )
         } else {
-            listOf(
-                accent.copy(alpha = 0.08f).compositeOver(pageSolidColor),
-                accent.copy(alpha = 0.02f).compositeOver(pageSolidColor),
-                Color(0xFFFFFFFF),
-                pageSolidColor
+            arrayOf(
+                0.00f to accent.copy(alpha = 0.08f).compositeOver(pageSolidColor),
+                0.22f to accent.copy(alpha = 0.025f).compositeOver(pageSolidColor),
+                0.50f to pageSolidColor,
+                1.00f to pageSolidColor
             )
         }
     }
@@ -412,15 +413,13 @@ fun MusicScreen(
         modifier = modifier
             .fillMaxSize()
             .drawWithCache {
-                val gradientHeight = size.height * 0.55f
-                val brush = Brush.verticalGradient(gradientStops, startY = 0f, endY = gradientHeight)
+                val brush = Brush.verticalGradient(
+                    colorStops = gradientColorStops,
+                    startY = 0f,
+                    endY = size.height
+                )
                 onDrawBehind {
-                    drawRect(
-                        color = pageSolidColor,
-                        topLeft = Offset(0f, gradientHeight),
-                        size = Size(size.width, size.height - gradientHeight)
-                    )
-                    drawRect(brush = brush, size = Size(size.width, gradientHeight))
+                    drawRect(brush = brush)
                 }
             }
     ) {
