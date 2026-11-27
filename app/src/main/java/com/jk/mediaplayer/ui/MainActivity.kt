@@ -289,9 +289,10 @@ class MainActivity : ComponentActivity() {
                         )
                     }
 
-                    availableUpdate?.let { info ->
+                    val update = availableUpdate
+                    if (update != null) {
                         AppUpdateDialog(
-                            updateInfo = info,
+                            updateInfo = update,
                             accentColor = MusicRed,
                             isDark = isDark,
                             onIgnoreFor7Days = {
@@ -1535,15 +1536,6 @@ private fun Modifier.playerDragHandle(
                     targetValue = if (expand) 1f else 0f,
                     animationSpec = spring(
                         dampingRatio = 0.85f,
-                        stiffness = Spring.StiffnessMediumLow
-                    ),
-                    initialVelocity = -velocityY / travelPx
-                )
-            }
-        }
-    }
-}
- dampingRatio = 0.85f,
                         stiffness = Spring.StiffnessMediumLow
                     ),
                     initialVelocity = -velocityY / travelPx

@@ -187,9 +187,10 @@ class VideoActivity : ComponentActivity() {
                         )
                     }
 
-                    availableUpdate?.let { info ->
+                    val update = availableUpdate
+                    if (update != null) {
                         AppUpdateDialog(
-                            updateInfo = info,
+                            updateInfo = update,
                             accentColor = VideoIndigo,
                             isDark = isDark,
                             onIgnoreFor7Days = {
