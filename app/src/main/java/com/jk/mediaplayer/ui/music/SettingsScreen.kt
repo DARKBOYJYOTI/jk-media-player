@@ -80,7 +80,6 @@ fun SettingsScreen(
     val textPrimary = if (isDark) Color.White else Color(0xFF111216)
     val textSecondary = if (isDark) Color(0xFFA0A3B5) else Color(0xFF6B7280)
 
-    val scrollState = rememberScrollState()
 
     // Pulsing heart animation
     val infiniteTransition = rememberInfiniteTransition(label = "heartPulse")
@@ -156,23 +155,37 @@ fun SettingsScreen(
                 }
             }
         ) { innerPadding ->
-            if (settingsCategory == "ABOUT") {
+            androidx.compose.animation.AnimatedContent(
+                targetState = settingsCategory,
+                transitionSpec = {
+                    if (initialState == null && targetState != null) {
+                        com.jk.mediaplayer.ui.common.PageTransitions.drillForwardTransform()
+                    } else if (initialState != null && targetState == null) {
+                        com.jk.mediaplayer.ui.common.PageTransitions.drillBackwardTransform()
+                    } else {
+                        com.jk.mediaplayer.ui.common.PageTransitions.drillForwardTransform()
+                    }
+                },
+                label = "musicSettingsCategoryTransition"
+            ) { activeCategory ->
+            if (activeCategory == "ABOUT") {
                 AboutTosHelpView(
                     accentColor = MusicRed,
                     innerPadding = innerPadding,
                     initialTab = aboutTab
                 )
             } else {
+                val pageScrollState = rememberScrollState()
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
                         .background(MaterialTheme.colorScheme.background)
                         .navigationBarsPadding()
-                        .verticalScroll(scrollState)
+                        .verticalScroll(pageScrollState)
                         .padding(horizontal = 16.dp, vertical = 14.dp)
                 ) {
-                if (settingsCategory == null) {
+                if (activeCategory == null) {
                     Surface(
                         shape = RoundedCornerShape(22.dp),
                         color = cardBg,
@@ -303,7 +316,7 @@ fun SettingsScreen(
                         textSecondary = textSecondary,
                         onClick = { showClearCacheConfirm = true }
                     )
-                } else when (settingsCategory) {
+                } else when (activeCategory) {
                     "APPEARANCE" -> {
                         SettingsGroup(cardBg, cardBorder) {
                             Text("Theme Mode", fontSize = 17.sp, fontWeight = FontWeight.SemiBold, color = textPrimary)
@@ -411,6 +424,7 @@ fun SettingsScreen(
                 Spacer(Modifier.height(24.dp))
             }
         }
+            }
             if (showClearCacheConfirm) {
                 AlertDialog(
                     onDismissRequest = { showClearCacheConfirm = false },

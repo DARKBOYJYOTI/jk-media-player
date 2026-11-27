@@ -3774,16 +3774,23 @@ fun GestureVideoPlayerScreen(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .clickable {
-                                    profileMode = "STANDARD"
-                                    hwMode = "AUTO"
-                                    deinterlace = "AUTO"
-                                    highColor = false
-                                    prefs.setVideoEnhancerMode("STANDARD")
-                                    prefs.setVideoHwDecoder("AUTO")
-                                    prefs.setVideoDeinterlaceMode("AUTO")
-                                    prefs.setVideoHighColorQuality(false)
-                                    (context as? VideoPlayerActivity)?.reloadCurrentVideo()
-                                    AppToast.show("Video display settings reset to default")
+                                    if (profileMode == "STANDARD" && hwMode == "AUTO" && deinterlace == "AUTO" && !highColor) {
+                                        AppToast.show("Already using default video settings")
+                                    } else {
+                                        val needsReload = hwMode != "AUTO" || deinterlace != "AUTO" || highColor
+                                        profileMode = "STANDARD"
+                                        hwMode = "AUTO"
+                                        deinterlace = "AUTO"
+                                        highColor = false
+                                        prefs.setVideoEnhancerMode("STANDARD")
+                                        prefs.setVideoHwDecoder("AUTO")
+                                        prefs.setVideoDeinterlaceMode("AUTO")
+                                        prefs.setVideoHighColorQuality(false)
+                                        if (needsReload) {
+                                            (context as? VideoPlayerActivity)?.reloadCurrentVideo()
+                                        }
+                                        AppToast.show("Video display settings reset to default")
+                                    }
                                 }
                                 .padding(vertical = 8.dp),
                             horizontalArrangement = Arrangement.Center,
@@ -3803,13 +3810,6 @@ fun GestureVideoPlayerScreen(
                                 color = Color.White.copy(alpha = 0.6f)
                             )
                         }
-
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = "Picture profiles apply instantly. Decoder, 32-bit colour, and deinterlace reload the video.",
-                            fontSize = 11.sp,
-                            color = Color.White.copy(alpha = 0.4f)
-                        )
                     }
                 }
             }

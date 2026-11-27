@@ -94,7 +94,6 @@ fun VideoSettingsScreen(
     val textPrimary = if (isDark) Color.White else Color(0xFF111216)
     val textSecondary = if (isDark) Color(0xFFA0A3B5) else Color(0xFF6B7280)
 
-    val scrollState = rememberScrollState()
 
     // Pulsing heart animation
     val infiniteTransition = rememberInfiniteTransition(label = "heartPulse")
@@ -168,23 +167,37 @@ fun VideoSettingsScreen(
                 }
             }
         ) { innerPadding ->
-            if (settingsCategory == "ABOUT") {
+            androidx.compose.animation.AnimatedContent(
+                targetState = settingsCategory,
+                transitionSpec = {
+                    if (initialState == null && targetState != null) {
+                        com.jk.mediaplayer.ui.common.PageTransitions.drillForwardTransform()
+                    } else if (initialState != null && targetState == null) {
+                        com.jk.mediaplayer.ui.common.PageTransitions.drillBackwardTransform()
+                    } else {
+                        com.jk.mediaplayer.ui.common.PageTransitions.drillForwardTransform()
+                    }
+                },
+                label = "videoSettingsCategoryTransition"
+            ) { activeCategory ->
+            if (activeCategory == "ABOUT") {
                 AboutTosHelpView(
                     accentColor = VideoIndigo,
                     innerPadding = innerPadding,
                     initialTab = aboutTab
                 )
             } else {
+                val pageScrollState = rememberScrollState()
                 Column(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(innerPadding)
                         .background(MaterialTheme.colorScheme.background)
                         .navigationBarsPadding()
-                        .verticalScroll(scrollState)
+                        .verticalScroll(pageScrollState)
                         .padding(horizontal = 16.dp, vertical = 14.dp)
                 ) {
-                        if (settingsCategory == null) {
+                        if (activeCategory == null) {
                             Surface(
                                 shape = RoundedCornerShape(22.dp),
                                 color = cardBg,
@@ -320,7 +333,7 @@ fun VideoSettingsScreen(
                             }
                         }
 
-                        if (settingsCategory == "APPEARANCE") {            // SECTION 1: APPEARANCE
+                        if (activeCategory == "APPEARANCE") {            // SECTION 1: APPEARANCE
             Text(
                 text = "APPEARANCE",
                 fontSize = 13.sp,
@@ -567,7 +580,7 @@ fun VideoSettingsScreen(
                         }
 
 
-                        if (settingsCategory == "DISPLAY") {
+                        if (activeCategory == "DISPLAY") {
 // SECTION: VIDEO QUALITY & DISPLAY ENHANCER
             Text(
                 text = "VIDEO QUALITY & DISPLAY ENHANCER",
@@ -905,15 +918,19 @@ fun VideoSettingsScreen(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .clickable {
-                                videoEnhancerMode = "STANDARD"
-                                videoHwDecoder = "AUTO"
-                                videoDeinterlace = "AUTO"
-                                videoHighColor = false
-                                prefsManager.setVideoEnhancerMode("STANDARD")
-                                prefsManager.setVideoHwDecoder("AUTO")
-                                prefsManager.setVideoDeinterlaceMode("AUTO")
-                                prefsManager.setVideoHighColorQuality(false)
-                                AppToast.show("Video display settings reset to default")
+                                if (videoEnhancerMode == "STANDARD" && videoHwDecoder == "AUTO" && videoDeinterlace == "AUTO" && !videoHighColor) {
+                                    AppToast.show("Already using default video settings")
+                                } else {
+                                    videoEnhancerMode = "STANDARD"
+                                    videoHwDecoder = "AUTO"
+                                    videoDeinterlace = "AUTO"
+                                    videoHighColor = false
+                                    prefsManager.setVideoEnhancerMode("STANDARD")
+                                    prefsManager.setVideoHwDecoder("AUTO")
+                                    prefsManager.setVideoDeinterlaceMode("AUTO")
+                                    prefsManager.setVideoHighColorQuality(false)
+                                    AppToast.show("Video display settings reset to default")
+                                }
                             }
                             .padding(vertical = 8.dp),
                         horizontalArrangement = Arrangement.Center,
@@ -940,7 +957,7 @@ fun VideoSettingsScreen(
 
                         }
 
-                        if (settingsCategory == "SOUND") {
+                        if (activeCategory == "SOUND") {
                             Text(
                                 text = "SOUND",
                                 fontSize = 13.sp,
@@ -1063,7 +1080,7 @@ fun VideoSettingsScreen(
                             }
                         }
 
-                        if (settingsCategory == "PLAYBACK") {
+                        if (activeCategory == "PLAYBACK") {
             // SECTION 2: PLAYBACK & CONTROLS
             Text(
                 text = "PLAYBACK & CONTROLS",
@@ -1188,7 +1205,7 @@ fun VideoSettingsScreen(
 
                         }
 
-                        if (settingsCategory == "LIBRARY") {
+                        if (activeCategory == "LIBRARY") {
             // SECTION 3: LIBRARY
             Text(
                 text = "LIBRARY",
@@ -1379,6 +1396,7 @@ fun VideoSettingsScreen(
             }
             Spacer(modifier = Modifier.height(30.dp))
         }
+    }
     }
 }
 
