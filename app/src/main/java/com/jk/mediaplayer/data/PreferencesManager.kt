@@ -1082,6 +1082,18 @@ fun clearMetadataCache() {
         return snoozedUntil > nowMs
     }
 
+    fun shouldCheckForUpdateDaily(nowMs: Long = System.currentTimeMillis()): Boolean {
+        if (isUpdateSnoozed(nowMs)) return false
+        val lastCheckMs = prefs.getLong("update_last_checked_ms", 0L)
+        if (lastCheckMs <= 0L) return true
+        val oneDayMs = 24L * 60L * 60L * 1000L
+        return (nowMs - lastCheckMs) >= oneDayMs
+    }
+
+    fun markUpdateCheckedNow(nowMs: Long = System.currentTimeMillis()) {
+        prefs.edit().putLong("update_last_checked_ms", nowMs).apply()
+    }
+
     fun snoozeUpdateFor7Days(nowMs: Long = System.currentTimeMillis()) {
         val sevenDaysMs = 7L * 24L * 60L * 60L * 1000L
         prefs.edit().putLong("update_snoozed_until_ms", nowMs + sevenDaysMs).apply()

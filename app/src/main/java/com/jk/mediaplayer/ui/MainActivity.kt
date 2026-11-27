@@ -244,8 +244,10 @@ class MainActivity : ComponentActivity() {
             var availableUpdate by remember { mutableStateOf<AppUpdateInfo?>(null) }
 
             LaunchedEffect(showOnboarding, hasStoragePermission) {
-                if (!showOnboarding && hasStoragePermission && !prefsManager.isUpdateSnoozed()) {
-                    availableUpdate = AppUpdateChecker.checkForUpdateIfNeeded()
+                if (!showOnboarding && hasStoragePermission && prefsManager.shouldCheckForUpdateDaily()) {
+                    availableUpdate = AppUpdateChecker.checkForUpdateIfNeeded(
+                        onCheckCompleted = { prefsManager.markUpdateCheckedNow() }
+                    )
                 }
             }
 

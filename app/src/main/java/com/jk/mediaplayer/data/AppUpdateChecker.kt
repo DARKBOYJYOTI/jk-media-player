@@ -32,15 +32,19 @@ object AppUpdateChecker {
     private val checkedThisSession = AtomicBoolean(false)
 
     suspend fun checkForUpdateIfNeeded(
-        currentVersion: String = BuildConfig.VERSION_NAME
+        currentVersion: String = BuildConfig.VERSION_NAME,
+        onCheckCompleted: () -> Unit = {}
     ): AppUpdateInfo? {
         if (!checkedThisSession.compareAndSet(false, true)) return null
         return withContext(Dispatchers.IO) {
-            fetchLatestUpdate(currentVersion)
+            fetchLatestUpdate(currentVersion, onCheckCompleted)
         }
     }
 
-    private fun fetchLatestUpdate(currentVersion: String): AppUpdateInfo? {
+    private fun fetchLatestUpdate(
+        currentVersion: String,
+        onCheckCompleted: () -> Unit
+    ): AppUpdateInfo? {
         var connection: HttpURLConnection? = null
         return try {
             val url = URL(LATEST_RELEASE_API)
@@ -53,6 +57,9 @@ object AppUpdateChecker {
             }
             if (connection.responseCode !in 200..299) return null
             val body = connection.inputStream.bufferedReader().use { it.readText() }
+            // Record the daily check timestamp once a valid GitHub response is received,
+            // so offline launches do not consume today's update check.
+            onCheckCompleted()
             val json = JSONObject(body)
             if (json.optBoolean("draft", false) || json.optBoolean("prerelease", false)) {
                 return null
