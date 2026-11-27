@@ -1162,15 +1162,11 @@ fun MusicAppRoot(
                 }
             }
 
-            // Dedicated Settings Screen (Smooth Material 3 Scale + Vertical Slide Transition)
+            // Dedicated Settings Screen with GPU-composited Material 3 horizontal drill transition
             AnimatedVisibility(
                 visible = showSettingsScreen,
-                enter = fadeIn(androidx.compose.animation.core.tween(260)) +
-                        androidx.compose.animation.scaleIn(initialScale = 0.92f, animationSpec = androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing)) +
-                        slideInVertically(initialOffsetY = { it / 7 }, animationSpec = androidx.compose.animation.core.tween(260, easing = androidx.compose.animation.core.FastOutSlowInEasing)),
-                exit = fadeOut(androidx.compose.animation.core.tween(180)) +
-                        androidx.compose.animation.scaleOut(targetScale = 0.92f, animationSpec = androidx.compose.animation.core.tween(180, easing = androidx.compose.animation.core.FastOutSlowInEasing)) +
-                        slideOutVertically(targetOffsetY = { it / 7 }, animationSpec = androidx.compose.animation.core.tween(180, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+                enter = com.jk.mediaplayer.ui.common.PageTransitions.overlayDrillEnter(),
+                exit = com.jk.mediaplayer.ui.common.PageTransitions.overlayDrillExit()
             ) {
                 SettingsScreen(
                     currentThemeMode = currentThemeMode,

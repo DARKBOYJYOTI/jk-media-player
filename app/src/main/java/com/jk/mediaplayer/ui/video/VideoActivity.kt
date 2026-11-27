@@ -385,30 +385,37 @@ fun VideoAppRoot(
                         }
                     )
 
+                    var lastVisibleVideoFolder by remember { mutableStateOf<VideoFolder?>(null) }
                     if (selectedVideoFolder != null) {
-                        FolderVideosScreen(
-                            folder = selectedVideoFolder!!,
-                            onBackClick = { selectedVideoFolder = null },
-                            onVideoClick = { video, list -> onPlayVideo(video, list) },
-                            onRefreshLibrary = {
-                                refreshScope.launch {
-                                    val fresh = MediaScanner.scanVideos(context)
-                                    videoFolders = fresh
-                                    selectedVideoFolder = fresh.firstOrNull { it.path == selectedVideoFolder?.path }
-                                }
-                            }
-                        )
+                        lastVisibleVideoFolder = selectedVideoFolder
                     }
 
-                    // Dedicated Search Screen with Material 3 Scale + Vertical Slide Animation (matching Music player)
+                    AnimatedVisibility(
+                        visible = selectedVideoFolder != null,
+                        enter = com.jk.mediaplayer.ui.common.PageTransitions.overlayDrillEnter(),
+                        exit = com.jk.mediaplayer.ui.common.PageTransitions.overlayDrillExit()
+                    ) {
+                        lastVisibleVideoFolder?.let { folder ->
+                            FolderVideosScreen(
+                                folder = folder,
+                                onBackClick = { selectedVideoFolder = null },
+                                onVideoClick = { video, list -> onPlayVideo(video, list) },
+                                onRefreshLibrary = {
+                                    refreshScope.launch {
+                                        val fresh = MediaScanner.scanVideos(context)
+                                        videoFolders = fresh
+                                        selectedVideoFolder = fresh.firstOrNull { it.path == selectedVideoFolder?.path }
+                                    }
+                                }
+                            )
+                        }
+                    }
+
+                    // Dedicated Search Screen with GPU-composited subtle vertical glide
                     AnimatedVisibility(
                         visible = showSearchPage,
-                        enter = fadeIn(tween(260)) +
-                                scaleIn(initialScale = 0.92f, animationSpec = tween(260, easing = FastOutSlowInEasing)) +
-                                slideInVertically(initialOffsetY = { it / 7 }, animationSpec = tween(260, easing = FastOutSlowInEasing)),
-                        exit = fadeOut(tween(180)) +
-                                scaleOut(targetScale = 0.92f, animationSpec = tween(180, easing = FastOutSlowInEasing)) +
-                                slideOutVertically(targetOffsetY = { it / 7 }, animationSpec = tween(180, easing = FastOutSlowInEasing))
+                        enter = com.jk.mediaplayer.ui.common.PageTransitions.searchOverlayEnter(),
+                        exit = com.jk.mediaplayer.ui.common.PageTransitions.searchOverlayExit()
                     ) {
                         VideoSearchScreen(
                             folders = videoFolders,
@@ -421,15 +428,11 @@ fun VideoAppRoot(
                         )
                     }
 
-                    // Dedicated Video Settings Screen with Material 3 Scale + Vertical Slide Animation (matching Music player)
+                    // Dedicated Video Settings Screen with Material 3 horizontal drill transition
                     AnimatedVisibility(
                         visible = showSettingsPage,
-                        enter = fadeIn(tween(260)) +
-                                scaleIn(initialScale = 0.92f, animationSpec = tween(260, easing = FastOutSlowInEasing)) +
-                                slideInVertically(initialOffsetY = { it / 7 }, animationSpec = tween(260, easing = FastOutSlowInEasing)),
-                        exit = fadeOut(tween(180)) +
-                                scaleOut(targetScale = 0.92f, animationSpec = tween(180, easing = FastOutSlowInEasing)) +
-                                slideOutVertically(targetOffsetY = { it / 7 }, animationSpec = tween(180, easing = FastOutSlowInEasing))
+                        enter = com.jk.mediaplayer.ui.common.PageTransitions.overlayDrillEnter(),
+                        exit = com.jk.mediaplayer.ui.common.PageTransitions.overlayDrillExit()
                     ) {
                         VideoSettingsScreen(
                             currentThemeMode = currentThemeMode,

@@ -701,11 +701,50 @@ fun MusicScreen(
                     )
                 }
             ) {
-                // Main View Content based on Drilldown Views or Bottom Nav Tab
+                // Keep last non-null detail targets so exit animations stay populated without flashing.
+                var lastPlaylist by remember { mutableStateOf<Pair<String, List<AudioItem>>?>(null) }
+                if (selectedPlaylist != null) lastPlaylist = selectedPlaylist
+                var lastFolder by remember { mutableStateOf<AudioFolder?>(null) }
+                if (selectedFolder != null) lastFolder = selectedFolder
+                var lastArtist by remember { mutableStateOf<ArtistItem?>(null) }
+                if (selectedArtist != null) lastArtist = selectedArtist
+                var lastAlbum by remember { mutableStateOf<AlbumItem?>(null) }
+                if (selectedAlbum != null) lastAlbum = selectedAlbum
+
+                // Route key encodes whether we are on a root tab (Int) or a detail page (String).
+                val pageRoute: Any = when {
+                    selectedPlaylist != null -> "playlist:${selectedPlaylist!!.first}"
+                    selectedFolder != null -> "folder:${selectedFolder!!.path}"
+                    selectedArtist != null -> "artist:${selectedArtist!!.name}"
+                    selectedAlbum != null -> "album:${selectedAlbum!!.name}"
+                    else -> currentNavTab
+                }
+
+                // Main View Content with GPU-composited Material 3 shared-axis transitions
+                androidx.compose.animation.AnimatedContent(
+                    targetState = pageRoute,
+                    transitionSpec = {
+                        val from = initialState
+                        val to = targetState
+                        when {
+                            from is Int && to is Int ->
+                                com.jk.mediaplayer.ui.common.PageTransitions.tabSwitchTransform(forward = to > from)
+                            from is Int && to is String ->
+                                com.jk.mediaplayer.ui.common.PageTransitions.drillForwardTransform()
+                            from is String && to is Int ->
+                                com.jk.mediaplayer.ui.common.PageTransitions.drillBackwardTransform()
+                            else ->
+                                com.jk.mediaplayer.ui.common.PageTransitions.drillForwardTransform()
+                        }
+                    },
+                    label = "musicPageTransition"
+                ) { route ->
                 when {
-                    selectedPlaylist != null -> {
-                        val currentSelectedName = selectedPlaylist!!.first
-                        val currentSelectedTracks = remember(selectedPlaylist, tracks, favoriteIds) {
+                    route is String && route.startsWith("playlist:") -> {
+                        val activePl = selectedPlaylist ?: lastPlaylist
+                        if (activePl != null) {
+                        val currentSelectedName = activePl.first
+                        val currentSelectedTracks = remember(activePl, tracks, favoriteIds) {
                             if (currentSelectedName.equals("Ringtones", ignoreCase = true)) {
                                 val customPl = prefsManager.getCustomPlaylists().firstOrNull { it.name.equals("Ringtones", ignoreCase = true) }
                                 val ids: List<Long> = customPl?.trackIds ?: emptyList()
@@ -717,7 +756,7 @@ fun MusicScreen(
                             } else if (currentSelectedName.equals("Liked Music", ignoreCase = true)) {
                                 tracks.filter { favoriteIds.contains(it.id.toString()) }
                             } else {
-                                selectedPlaylist!!.second
+                                activePl.second
                             }
                         }
                         PlaylistTracksView(
@@ -742,11 +781,14 @@ fun MusicScreen(
                             onDeleteTrack = onDeleteTrack,
                             onBlacklistTrack = { blacklistConfirmTrack = it }
                         )
+                        }
                     }
-                    selectedFolder != null -> {
+                    route is String && route.startsWith("folder:") -> {
+                        val activeFolder = selectedFolder ?: lastFolder
+                        if (activeFolder != null) {
                         FolderTracksView(
                             contentBottomPadding = listBottomPadding,
-                            folder = selectedFolder!!,
+                            folder = activeFolder,
                             currentTrack = currentTrack,
                             isPlaying = isPlaying,
                             onTrackClick = smartTrackClick,
@@ -765,11 +807,14 @@ fun MusicScreen(
                             onDeleteTrack = onDeleteTrack,
                             onBlacklistTrack = { blacklistConfirmTrack = it }
                         )
+                        }
                     }
-                    selectedArtist != null -> {
+                    route is String && route.startsWith("artist:") -> {
+                        val activeArtist = selectedArtist ?: lastArtist
+                        if (activeArtist != null) {
                         ArtistTracksView(
                             contentBottomPadding = listBottomPadding,
-                            artist = selectedArtist!!,
+                            artist = activeArtist,
                             currentTrack = currentTrack,
                             isPlaying = isPlaying,
                             onTrackClick = smartTrackClick,
@@ -788,11 +833,14 @@ fun MusicScreen(
                             onDeleteTrack = onDeleteTrack,
                             onBlacklistTrack = { blacklistConfirmTrack = it }
                         )
+                        }
                     }
-                    selectedAlbum != null -> {
+                    route is String && route.startsWith("album:") -> {
+                        val activeAlbum = selectedAlbum ?: lastAlbum
+                        if (activeAlbum != null) {
                         AlbumTracksView(
                             contentBottomPadding = listBottomPadding,
-                            album = selectedAlbum!!,
+                            album = activeAlbum,
                             currentTrack = currentTrack,
                             isPlaying = isPlaying,
                             onTrackClick = smartTrackClick,
@@ -811,9 +859,10 @@ fun MusicScreen(
                             onDeleteTrack = onDeleteTrack,
                             onBlacklistTrack = { blacklistConfirmTrack = it }
                         )
+                        }
                     }
                     else -> {
-                        when (currentNavTab) {
+                        when (route as? Int ?: currentNavTab) {
                             0 -> {
                                 // TAB 0: HOME LIBRARY (Swipeable sections, liked songs prioritized)
                                 HomeSectionView(
@@ -912,19 +961,16 @@ fun MusicScreen(
                         }
                     }
                 }
+                }
             }
         }
     }
 
-    // Dedicated Fullscreen Fuzzy Search Screen (Material 3 Container Zoom)
+    // Dedicated Fullscreen Fuzzy Search Screen (GPU-composited subtle upward glide)
         AnimatedVisibility(
             visible = showSearchScreen,
-            enter = fadeIn(tween(260)) +
-                    scaleIn(initialScale = 0.92f, animationSpec = tween(260, easing = FastOutSlowInEasing)) +
-                    slideInVertically(initialOffsetY = { it / 7 }, animationSpec = tween(260, easing = FastOutSlowInEasing)),
-            exit = fadeOut(tween(180)) +
-                    scaleOut(targetScale = 0.92f, animationSpec = tween(180, easing = FastOutSlowInEasing)) +
-                    slideOutVertically(targetOffsetY = { it / 7 }, animationSpec = tween(180, easing = FastOutSlowInEasing))
+            enter = com.jk.mediaplayer.ui.common.PageTransitions.searchOverlayEnter(),
+            exit = com.jk.mediaplayer.ui.common.PageTransitions.searchOverlayExit()
         ) {
             Box(
                 modifier = Modifier

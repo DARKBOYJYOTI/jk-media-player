@@ -433,7 +433,17 @@ fun SettingsScreen(
         }
     }
 
-    if (activeBlacklistSubScreen == "FOLDERS") {
+    var lastBlacklistSubScreen by remember { mutableStateOf<String?>(null) }
+    if (activeBlacklistSubScreen != null) {
+        lastBlacklistSubScreen = activeBlacklistSubScreen
+    }
+
+    androidx.compose.animation.AnimatedVisibility(
+        visible = activeBlacklistSubScreen != null,
+        enter = com.jk.mediaplayer.ui.common.PageTransitions.overlayDrillEnter(),
+        exit = com.jk.mediaplayer.ui.common.PageTransitions.overlayDrillExit()
+    ) {
+        if (lastBlacklistSubScreen == "FOLDERS") {
         val folderCandidates = remember(tracks) {
             tracks.groupBy { it.folderPath.ifBlank { try { java.io.File(it.path).parent ?: "" } catch (_: Exception) { "" } } }
                 .filter { it.key.isNotBlank() }
@@ -475,7 +485,7 @@ fun SettingsScreen(
             },
             onBack = { activeBlacklistSubScreen = null }
         )
-    } else if (activeBlacklistSubScreen == "FILES") {
+        } else if (lastBlacklistSubScreen == "FILES") {
         val fileCandidates = remember(tracks) {
             tracks.map { track ->
                 BlacklistCandidateItem(
@@ -516,6 +526,7 @@ fun SettingsScreen(
             },
             onBack = { activeBlacklistSubScreen = null }
         )
+        }
     }
 }
 
