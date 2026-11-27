@@ -1221,14 +1221,13 @@ fun HomeSectionView(
 
     val configuration = LocalConfiguration.current
     val density = androidx.compose.ui.platform.LocalDensity.current
-    val albumGridHeight = remember(configuration.screenWidthDp, configuration.fontScale) {
-        val cardWidth = (configuration.screenWidthDp.dp - 52.dp) / 2
-        // Caption block is measured from the exact typography of SpeedDialAlbumCard: an 8 dp gap
-        // under the artwork, one title line (19 sp line height), a 3 dp text gap, and one artist line (16 sp).
-        // Both texts render without extra font padding, so this is the real height and no line
-        // gets clipped at any user font scale.
-        val captionHeight = with(density) { (19 + 16).sp.toDp() } + 8.dp + 3.dp
-        (cardWidth + captionHeight) * 2 + 14.dp
+    val albumGridHeight = remember(configuration.screenWidthDp, density) {
+        val cardWidth = ((configuration.screenWidthDp.dp - 52.dp) / 2).coerceAtLeast(0.dp)
+        // Match SpeedDialAlbumCard's exact caption metrics: 8 dp gap under artwork,
+        // 22 sp title lineHeight, 3 dp gap, and 20 sp artist lineHeight, plus a small
+        // buffer for custom system fonts and rounding so the second row never clips.
+        val captionHeight = with(density) { (22 + 20).sp.toDp() } + 8.dp + 3.dp
+        (cardWidth + captionHeight) * 2 + 14.dp + 4.dp
     }
 
     val recentlyAddedAlbumsChunks = remember(recentlyAddedAlbums) { recentlyAddedAlbums.chunked(4) }
@@ -1537,6 +1536,7 @@ fun HomeSectionView(
                         HorizontalPager(
                             state = recentlyAddedAlbumsPagerState,
                             beyondViewportPageCount = 0,
+                            verticalAlignment = Alignment.Top,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(albumGridHeight),
@@ -1627,6 +1627,7 @@ fun HomeSectionView(
                         HorizontalPager(
                             state = topAlbumsPagerState,
                             beyondViewportPageCount = 0,
+                            verticalAlignment = Alignment.Top,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .height(albumGridHeight),
