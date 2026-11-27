@@ -128,11 +128,13 @@ object AppUpdateChecker {
 
         for (abi in supportedAbis) {
             val lowerAbi = abi.lowercase()
+            // Match exact ABI token bounded by hyphen/dot/start/end so "x86" never matches "x86_64".
+            val abiPattern = Regex("(^|[-.])${Regex.escape(lowerAbi)}([-.]|$)")
             val releaseMatch = apkAssets.firstOrNull { (name, _) ->
-                name.contains(lowerAbi) && !name.contains("debug")
+                abiPattern.containsMatchIn(name) && !name.contains("debug")
             }
             if (releaseMatch != null) return releaseMatch.second
-            val anyAbiMatch = apkAssets.firstOrNull { (name, _) -> name.contains(lowerAbi) }
+            val anyAbiMatch = apkAssets.firstOrNull { (name, _) -> abiPattern.containsMatchIn(name) }
             if (anyAbiMatch != null) return anyAbiMatch.second
         }
         return apkAssets.firstOrNull { (name, _) -> !name.contains("debug") }?.second

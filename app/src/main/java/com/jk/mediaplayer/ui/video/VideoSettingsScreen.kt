@@ -83,10 +83,10 @@ fun VideoSettingsScreen(
 
     val videoQualityVersion = PreferencesManager.videoQualityVersion
 
-    var videoHwDecoder by remember(videoQualityVersion) { mutableStateOf(prefsManager.getVideoHwDecoder()) }
-    var videoHighColor by remember(videoQualityVersion) { mutableStateOf(prefsManager.isVideoHighColorQuality()) }
-    var videoDeinterlace by remember(videoQualityVersion) { mutableStateOf(prefsManager.getVideoDeinterlaceMode()) }
-    var videoEnhancerMode by remember(videoQualityVersion) { mutableStateOf(prefsManager.getVideoEnhancerMode()) }
+    val videoHwDecoder = remember(videoQualityVersion) { prefsManager.getVideoHwDecoder() }
+    val videoHighColor = remember(videoQualityVersion) { prefsManager.isVideoHighColorQuality() }
+    val videoDeinterlace = remember(videoQualityVersion) { prefsManager.getVideoDeinterlaceMode() }
+    val videoEnhancerMode = remember(videoQualityVersion) { prefsManager.getVideoEnhancerMode() }
 
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val cardBg = if (isDark) Color(0xFF14151B) else Color.White
@@ -661,9 +661,8 @@ fun VideoSettingsScreen(
                                     .clip(RoundedCornerShape(9.dp))
                                     .clickable {
                                         if (videoEnhancerMode != mode) {
-                                            videoEnhancerMode = mode
-                                            prefsManager.setVideoEnhancerMode(mode)
-                                            AppToast.show("Picture profile set to $label")
+                                            val msg = prefsManager.applyVideoProfileChange(mode, label)
+                                            AppToast.show(msg)
                                         }
                                     }
                             ) {
@@ -749,9 +748,8 @@ fun VideoSettingsScreen(
                                     .clip(RoundedCornerShape(9.dp))
                                     .clickable {
                                         if (videoHwDecoder != mode) {
-                                            videoHwDecoder = mode
-                                            prefsManager.setVideoHwDecoder(mode)
-                                            AppToast.show("Decoder set to $label")
+                                            val msg = prefsManager.applyVideoHwDecoderChange(mode, label)
+                                            AppToast.show(msg)
                                         }
                                     }
                             ) {
@@ -810,9 +808,8 @@ fun VideoSettingsScreen(
                         Switch(
                             checked = videoHighColor,
                             onCheckedChange = { checked ->
-                                videoHighColor = checked
-                                prefsManager.setVideoHighColorQuality(checked)
-                                AppToast.show(if (checked) "32-Bit True Color enabled" else "Standard color enabled")
+                                val msg = prefsManager.applyVideoHighColorChange(checked)
+                                AppToast.show(msg)
                             },
                             colors = SwitchDefaults.colors(
                                 checkedThumbColor = Color.White,
@@ -887,9 +884,8 @@ fun VideoSettingsScreen(
                                     .clip(RoundedCornerShape(9.dp))
                                     .clickable {
                                         if (videoDeinterlace != mode) {
-                                            videoDeinterlace = mode
-                                            prefsManager.setVideoDeinterlaceMode(mode)
-                                            AppToast.show("Deinterlace set to $label")
+                                            val msg = prefsManager.applyVideoDeinterlaceChange(mode, label)
+                                            AppToast.show(msg)
                                         }
                                     }
                             ) {
@@ -918,18 +914,10 @@ fun VideoSettingsScreen(
                             .fillMaxWidth()
                             .clip(RoundedCornerShape(8.dp))
                             .clickable {
-                                if (videoEnhancerMode == "STANDARD" && videoHwDecoder == "AUTO" && videoDeinterlace == "AUTO" && !videoHighColor) {
-                                    AppToast.show("Already using default video settings")
-                                } else {
-                                    videoEnhancerMode = "STANDARD"
-                                    videoHwDecoder = "AUTO"
-                                    videoDeinterlace = "AUTO"
-                                    videoHighColor = false
-                                    prefsManager.setVideoEnhancerMode("STANDARD")
-                                    prefsManager.setVideoHwDecoder("AUTO")
-                                    prefsManager.setVideoDeinterlaceMode("AUTO")
-                                    prefsManager.setVideoHighColorQuality(false)
+                                if (prefsManager.resetVideoQualityToDefaults()) {
                                     AppToast.show("Video display settings reset to default")
+                                } else {
+                                    AppToast.show("Already using default video settings")
                                 }
                             }
                             .padding(vertical = 8.dp),

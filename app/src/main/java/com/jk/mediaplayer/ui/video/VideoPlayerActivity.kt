@@ -3524,10 +3524,11 @@ fun GestureVideoPlayerScreen(
 
         // Video Optimization Centered Modal Dialog — mirrors the Video Settings logic
         if (showVideoOptimizationDialog) {
-            var profileMode by remember { mutableStateOf(prefs.getVideoEnhancerMode()) }
-            var hwMode by remember { mutableStateOf(prefs.getVideoHwDecoder()) }
-            var highColor by remember { mutableStateOf(prefs.isVideoHighColorQuality()) }
-            var deinterlace by remember { mutableStateOf(prefs.getVideoDeinterlaceMode()) }
+            val qualityVersion = com.jk.mediaplayer.data.PreferencesManager.videoQualityVersion
+            val profileMode = remember(qualityVersion) { prefs.getVideoEnhancerMode() }
+            val hwMode = remember(qualityVersion) { prefs.getVideoHwDecoder() }
+            val highColor = remember(qualityVersion) { prefs.isVideoHighColorQuality() }
+            val deinterlace = remember(qualityVersion) { prefs.getVideoDeinterlaceMode() }
 
             Dialog(
                 onDismissRequest = { showVideoOptimizationDialog = false },
@@ -3614,10 +3615,9 @@ fun GestureVideoPlayerScreen(
                                         .clip(RoundedCornerShape(12.dp))
                                         .clickable {
                                             if (profileMode != mode) {
-                                                profileMode = mode
-                                                prefs.setVideoEnhancerMode(mode)
+                                                val msg = prefs.applyVideoProfileChange(mode, label)
                                                 (context as? VideoPlayerActivity)?.reloadCurrentVideo()
-                                                AppToast.show("Picture profile: $label")
+                                                AppToast.show(msg)
                                             }
                                         }
                                 ) {
@@ -3658,10 +3658,11 @@ fun GestureVideoPlayerScreen(
                                         .weight(1f)
                                         .clip(RoundedCornerShape(12.dp))
                                         .clickable {
-                                            hwMode = mode
-                                            prefs.setVideoHwDecoder(mode)
-                                            (context as? VideoPlayerActivity)?.reloadCurrentVideo()
-                                            AppToast.show("Decoder: $label")
+                                            if (hwMode != mode) {
+                                                val msg = prefs.applyVideoHwDecoderChange(mode, label)
+                                                (context as? VideoPlayerActivity)?.reloadCurrentVideo()
+                                                AppToast.show(msg)
+                                            }
                                         }
                                 ) {
                                     Text(
@@ -3699,10 +3700,9 @@ fun GestureVideoPlayerScreen(
                             Switch(
                                 checked = highColor,
                                 onCheckedChange = { checked ->
-                                    highColor = checked
-                                    prefs.setVideoHighColorQuality(checked)
+                                    val msg = prefs.applyVideoHighColorChange(checked)
                                     (context as? VideoPlayerActivity)?.reloadCurrentVideo()
-                                    AppToast.show(if (checked) "32-Bit True Color enabled" else "Standard color enabled")
+                                    AppToast.show(msg)
                                 },
                                 colors = SwitchDefaults.colors(
                                     checkedThumbColor = Color.White,
@@ -3737,10 +3737,11 @@ fun GestureVideoPlayerScreen(
                                         .weight(1f)
                                         .clip(RoundedCornerShape(12.dp))
                                         .clickable {
-                                            deinterlace = mode
-                                            prefs.setVideoDeinterlaceMode(mode)
-                                            (context as? VideoPlayerActivity)?.reloadCurrentVideo()
-                                            AppToast.show("Deinterlace: $label")
+                                            if (deinterlace != mode) {
+                                                val msg = prefs.applyVideoDeinterlaceChange(mode, label)
+                                                (context as? VideoPlayerActivity)?.reloadCurrentVideo()
+                                                AppToast.show(msg)
+                                            }
                                         }
                                 ) {
                                     Text(
@@ -3766,19 +3767,11 @@ fun GestureVideoPlayerScreen(
                                 .fillMaxWidth()
                                 .clip(RoundedCornerShape(10.dp))
                                 .clickable {
-                                    if (profileMode == "STANDARD" && hwMode == "AUTO" && deinterlace == "AUTO" && !highColor) {
-                                        AppToast.show("Already using default video settings")
-                                    } else {
-                                        profileMode = "STANDARD"
-                                        hwMode = "AUTO"
-                                        deinterlace = "AUTO"
-                                        highColor = false
-                                        prefs.setVideoEnhancerMode("STANDARD")
-                                        prefs.setVideoHwDecoder("AUTO")
-                                        prefs.setVideoDeinterlaceMode("AUTO")
-                                        prefs.setVideoHighColorQuality(false)
+                                    if (prefs.resetVideoQualityToDefaults()) {
                                         (context as? VideoPlayerActivity)?.reloadCurrentVideo()
                                         AppToast.show("Video display settings reset to default")
+                                    } else {
+                                        AppToast.show("Already using default video settings")
                                     }
                                 }
                                 .padding(vertical = 8.dp),

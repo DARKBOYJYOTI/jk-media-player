@@ -651,6 +651,110 @@ fun clearMetadataCache() {
         videoQualityVersion++
     }
 
+    private fun hasSoftwareOnlyVideoFilter(
+        profile: String = getVideoEnhancerMode(),
+        highColor: Boolean = isVideoHighColorQuality(),
+        deint: String = getVideoDeinterlaceMode()
+    ): Boolean = profile == "VIVID" || profile == "CINEMA" || highColor || deint == "YADIF" || deint == "BLEND"
+
+    private fun getAutoSwPreviousHwMode(): String = prefs.getString("video_hw_auto_sw_prev", "") ?: ""
+
+    private fun syncHwAfterFilterChange(featureLabel: String, enabledSwFilter: Boolean, normalToast: String): String {
+        val currentHw = getVideoHwDecoder()
+        val editor = prefs.edit()
+        if (enabledSwFilter) {
+            if (currentHw != "SOFTWARE") {
+                editor.putString("video_hw_auto_sw_prev", currentHw)
+                editor.putString("video_hw_decoder", "SOFTWARE")
+                editor.apply()
+                videoQualityVersion++
+                return "Switched to Software decoder — $featureLabel requires SW"
+            }
+            videoQualityVersion++
+            return normalToast
+        } else {
+            val prevHw = getAutoSwPreviousHwMode()
+            if (!hasSoftwareOnlyVideoFilter() && currentHw == "SOFTWARE" && (prevHw == "AUTO" || prevHw == "FORCE_HW")) {
+                editor.putString("video_hw_decoder", prevHw)
+                editor.remove("video_hw_auto_sw_prev")
+                editor.apply()
+                videoQualityVersion++
+                val hwLabel = if (prevHw == "FORCE_HW") "Force HW" else "Auto"
+                return "$normalToast — restored $hwLabel decoder"
+            }
+            videoQualityVersion++
+            return normalToast
+        }
+    }
+
+    fun applyVideoProfileChange(mode: String, label: String): String {
+        prefs.edit().putString("video_enhancer_mode", mode).apply()
+        val requiresSw = mode == "VIVID" || mode == "CINEMA"
+        return syncHwAfterFilterChange(
+            featureLabel = "$label profile",
+            enabledSwFilter = requiresSw,
+            normalToast = "Picture profile: $label"
+        )
+    }
+
+    fun applyVideoHighColorChange(enabled: Boolean): String {
+        prefs.edit().putBoolean("video_high_color", enabled).apply()
+        return syncHwAfterFilterChange(
+            featureLabel = "32-Bit True Color",
+            enabledSwFilter = enabled,
+            normalToast = if (enabled) "32-Bit True Color enabled" else "Standard color enabled"
+        )
+    }
+
+    fun applyVideoDeinterlaceChange(mode: String, label: String): String {
+        prefs.edit().putString("video_deinterlace_mode", mode).apply()
+        val requiresSw = mode == "YADIF" || mode == "BLEND"
+        return syncHwAfterFilterChange(
+            featureLabel = "$label deinterlace",
+            enabledSwFilter = requiresSw,
+            normalToast = "Deinterlace: $label"
+        )
+    }
+
+    fun applyVideoHwDecoderChange(mode: String, label: String): String {
+        val editor = prefs.edit()
+        editor.putString("video_hw_decoder", mode)
+        editor.remove("video_hw_auto_sw_prev")
+        if (mode != "SOFTWARE" && hasSoftwareOnlyVideoFilter()) {
+            editor.putString("video_enhancer_mode", "STANDARD")
+            editor.putBoolean("video_high_color", false)
+            val deint = getVideoDeinterlaceMode()
+            if (deint == "YADIF" || deint == "BLEND") {
+                editor.putString("video_deinterlace_mode", "AUTO")
+            }
+            editor.apply()
+            videoQualityVersion++
+            return "Switched to $label decoder — SW-only filters reset"
+        }
+        editor.apply()
+        videoQualityVersion++
+        return "Decoder: $label"
+    }
+
+    fun resetVideoQualityToDefaults(): Boolean {
+        if (getVideoEnhancerMode() == "STANDARD" &&
+            getVideoHwDecoder() == "AUTO" &&
+            getVideoDeinterlaceMode() == "AUTO" &&
+            !isVideoHighColorQuality()
+        ) {
+            return false
+        }
+        prefs.edit()
+            .putString("video_enhancer_mode", "STANDARD")
+            .putString("video_hw_decoder", "AUTO")
+            .putString("video_deinterlace_mode", "AUTO")
+            .putBoolean("video_high_color", false)
+            .remove("video_hw_auto_sw_prev")
+            .apply()
+        videoQualityVersion++
+        return true
+    }
+
     // --- Blacklist Management (Folders and Files) ---
     // Music Blacklists
     fun getMusicBlacklistedFolders(): Set<String> {
