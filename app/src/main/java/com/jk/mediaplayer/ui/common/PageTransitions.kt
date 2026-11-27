@@ -12,7 +12,6 @@ import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 
 /**
  * Shared GPU-composited Material 3 motion specs for both JK Music and JK Video.
@@ -58,42 +57,51 @@ object PageTransitions {
 
     /** Shared-axis horizontal transition for drilling forward into a detail page. */
     fun drillForwardTransform(): ContentTransform =
-        (fadeIn(tween(210, easing = EmphasizedDecelerate)) +
-            slideInHorizontally(
-                initialOffsetX = { (it * 0.10f).toInt() },
-                animationSpec = tween(280, easing = EmphasizedDecelerate)
-            )) togetherWith
-            (fadeOut(tween(135, easing = EmphasizedAccelerate)) +
+        ContentTransform(
+            targetContentEnter = fadeIn(tween(210, easing = EmphasizedDecelerate)) +
+                slideInHorizontally(
+                    initialOffsetX = { (it * 0.10f).toInt() },
+                    animationSpec = tween(280, easing = EmphasizedDecelerate)
+                ),
+            initialContentExit = fadeOut(tween(135, easing = EmphasizedAccelerate)) +
                 slideOutHorizontally(
                     targetOffsetX = { -(it * 0.04f).toInt() },
                     animationSpec = tween(200, easing = EmphasizedAccelerate)
-                )) using SizeTransform(clip = false)
+                ),
+            sizeTransform = SizeTransform(clip = false)
+        )
 
     /** Shared-axis horizontal transition for navigating back from a detail page. */
     fun drillBackwardTransform(): ContentTransform =
-        (fadeIn(tween(200, easing = EmphasizedDecelerate)) +
-            slideInHorizontally(
-                initialOffsetX = { -(it * 0.06f).toInt() },
-                animationSpec = tween(250, easing = EmphasizedDecelerate)
-            )) togetherWith
-            (fadeOut(tween(155, easing = EmphasizedAccelerate)) +
+        ContentTransform(
+            targetContentEnter = fadeIn(tween(200, easing = EmphasizedDecelerate)) +
+                slideInHorizontally(
+                    initialOffsetX = { -(it * 0.06f).toInt() },
+                    animationSpec = tween(250, easing = EmphasizedDecelerate)
+                ),
+            initialContentExit = fadeOut(tween(155, easing = EmphasizedAccelerate)) +
                 slideOutHorizontally(
                     targetOffsetX = { (it * 0.10f).toInt() },
                     animationSpec = tween(200, easing = EmphasizedAccelerate)
-                )) using SizeTransform(clip = false)
+                ),
+            sizeTransform = SizeTransform(clip = false)
+        )
 
     /** Directional shared-axis transition for bottom navigation tab switches. */
     fun tabSwitchTransform(forward: Boolean): ContentTransform {
         val dir = if (forward) 1 else -1
-        return (fadeIn(tween(185, easing = EmphasizedDecelerate)) +
-            slideInHorizontally(
-                initialOffsetX = { (it * 0.05f * dir).toInt() },
-                animationSpec = tween(230, easing = EmphasizedDecelerate)
-            )) togetherWith
-            (fadeOut(tween(115, easing = EmphasizedAccelerate)) +
+        return ContentTransform(
+            targetContentEnter = fadeIn(tween(185, easing = EmphasizedDecelerate)) +
+                slideInHorizontally(
+                    initialOffsetX = { (it * 0.05f * dir).toInt() },
+                    animationSpec = tween(230, easing = EmphasizedDecelerate)
+                ),
+            initialContentExit = fadeOut(tween(115, easing = EmphasizedAccelerate)) +
                 slideOutHorizontally(
                     targetOffsetX = { -(it * 0.03f * dir).toInt() },
                     animationSpec = tween(160, easing = EmphasizedAccelerate)
-                )) using SizeTransform(clip = false)
+                ),
+            sizeTransform = SizeTransform(clip = false)
+        )
     }
 }
