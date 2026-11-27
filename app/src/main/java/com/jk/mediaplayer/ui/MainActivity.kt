@@ -1042,7 +1042,6 @@ fun MusicAppRoot(
                                             miniArtworkAlpha = {
                                                 if (playerExpansionProgress.value > 0.001f) 0f else 1f
                                             },
-                                            isLoading = isPlayerLoading,
                                             modifier = Modifier
                                                 .align(Alignment.TopStart)
                                                 .fillMaxWidth()
