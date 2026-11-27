@@ -314,10 +314,77 @@ class LibVlcController(
             // Portrait playback letterboxes a 16:9 file across the screen width.
             (screenShort * 9f / 16f).toInt()
         }
-        val floorPx = (12f * metrics.density).toInt()
-        val capPx = (screenShort * 0.12f).toInt()
-        val marginPx = (videoHeightPx * 0.08f).toInt().coerceIn(floorPx, capPx)
+        val floorPx = (14f * metrics.density).toInt()
+        val capPx = (screenShort * 0.16f).toInt()
+        // 13% keeps subtitles above the 10% bottom crop line on 20:9 displays in Cropped mode.
+        val marginPx = (videoHeightPx * 0.13f).toInt().coerceIn(floorPx, capPx)
         return "--sub-margin=$marginPx"
+    }
+
+    private var activeSubtitleFontPath: String? = null
+
+    /**
+     * Resolves a system font file matching non-Latin subtitle languages (Hindi/Devanagari, Bengali,
+     * CJK, Arabic, etc.). Modern Android 12+ ships variable fonts (*-VF.ttf) that LibVLC 3.0.x's
+     * freetype Android XML parser misses, falling back to Roboto (Latin-only) and rendering tofu boxes.
+     */
+    private fun resolveSubtitleFontPath(trackName: String?): String? {
+        val label = trackName?.lowercase() ?: return null
+        val candidates: List<String> = when {
+            label.contains("hin") || label.contains("devanagari") || label.contains("marathi") || label.contains("nepali") -> listOf(
+                "/system/fonts/NotoSansDevanagari-Regular.ttf",
+                "/system/fonts/NotoSansDevanagari-VF.ttf",
+                "/system/fonts/NotoSansDevanagariUI-Regular.ttf",
+                "/system/fonts/NotoSansDevanagariUI-VF.ttf"
+            )
+            label.contains("ben") || label.contains("bangla") -> listOf(
+                "/system/fonts/NotoSansBengali-Regular.ttf",
+                "/system/fonts/NotoSansBengali-VF.ttf",
+                "/system/fonts/NotoSansBengaliUI-Regular.ttf",
+                "/system/fonts/NotoSansBengaliUI-VF.ttf"
+            )
+            label.contains("tam") -> listOf(
+                "/system/fonts/NotoSansTamil-Regular.ttf",
+                "/system/fonts/NotoSansTamil-VF.ttf"
+            )
+            label.contains("tel") -> listOf(
+                "/system/fonts/NotoSansTelugu-Regular.ttf",
+                "/system/fonts/NotoSansTelugu-VF.ttf"
+            )
+            label.contains("mal") -> listOf(
+                "/system/fonts/NotoSansMalayalam-Regular.ttf",
+                "/system/fonts/NotoSansMalayalam-VF.ttf"
+            )
+            label.contains("kan") -> listOf(
+                "/system/fonts/NotoSansKannada-Regular.ttf",
+                "/system/fonts/NotoSansKannada-VF.ttf"
+            )
+            label.contains("guj") -> listOf(
+                "/system/fonts/NotoSansGujarati-Regular.ttf",
+                "/system/fonts/NotoSansGujarati-VF.ttf"
+            )
+            label.contains("pan") || label.contains("punjabi") || label.contains("gurmukhi") -> listOf(
+                "/system/fonts/NotoSansGurmukhi-Regular.ttf",
+                "/system/fonts/NotoSansGurmukhi-VF.ttf"
+            )
+            label.contains("ara") || label.contains("urd") || label.contains("persian") || label.contains("fas") -> listOf(
+                "/system/fonts/NotoNaskhArabic-Regular.ttf",
+                "/system/fonts/NotoNaskhArabicUI-Regular.ttf",
+                "/system/fonts/NotoSansArabic-VF.ttf"
+            )
+            label.contains("tha") -> listOf(
+                "/system/fonts/NotoSansThai-Regular.ttf",
+                "/system/fonts/NotoSansThai-VF.ttf"
+            )
+            label.contains("chi") || label.contains("zho") || label.contains("jpn") || label.contains("jap") || label.contains("kor") -> listOf(
+                "/system/fonts/NotoSansCJK-Regular.ttc"
+            )
+            else -> return null
+        }
+        return candidates.firstOrNull { path ->
+            val f = java.io.File(path)
+            f.exists() && f.length() > 0L
+        }
     }
 
     private fun initLibVLC() {
@@ -350,6 +417,9 @@ class LibVlcController(
                     "--sub-autodetect-fuzzy=3" // Automatic subtitle file detection (.srt, .vtt, .sub, .ass)
                 )
             )
+            activeSubtitleFontPath?.let { fontPath ->
+                primaryOptions.add("--freetype-font=$fontPath")
+            }
         } else {
             primaryOptions.add("--no-sub-autodetect-file")
         }
@@ -1178,6 +1248,42 @@ class LibVlcController(
         hasUserSelectedSubtitle = true
         userSelectedSubtitleTrackId = trackId
         val player = mediaPlayer ?: return
+        if (isVideoFlow && trackId >= 0) {
+            val trackName = getSubtitleTracks().firstOrNull { it.first == trackId }?.second
+            val desiredFont = resolveSubtitleFontPath(trackName)
+            if (desiredFont != activeSubtitleFontPath && (lastPlayedPath.isNotEmpty() || lastPlayedUri != null)) {
+                val resumeMs = player.time.takeIf { it > 0L } ?: _currentTime.value
+                val wasPlaying = _isPlaying.value
+                val savedLayout = attachedLayout
+                val savedPath = lastPlayedPath
+                val savedUri = lastPlayedUri
+                activeSubtitleFontPath = desiredFont
+                try {
+                    player.setEventListener(null)
+                    player.stop()
+                    val vout = player.vlcVout
+                    if (vout.areViewsAttached()) vout.detachViews()
+                    player.release()
+                } catch (_: Throwable) {}
+                try {
+                    libVLC?.release()
+                } catch (_: Throwable) {}
+                mediaPlayer = null
+                libVLC = null
+                initLibVLC()
+                if (savedLayout != null) {
+                    attachVideoLayout(savedLayout)
+                }
+                playMedia(savedPath, savedUri, resumeMs)
+                if (!wasPlaying) {
+                    progressScope.launch {
+                        delay(450L)
+                        pause()
+                    }
+                }
+                return
+            }
+        }
         player.spuTrack = trackId
         if (trackId >= 0) {
             val curTime = player.time

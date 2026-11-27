@@ -1956,11 +1956,20 @@ fun GestureVideoPlayerScreen(
             // surface along and crop the text with the frame.
             val picture = layout.findViewById<android.view.View>(org.videolan.R.id.surface_video)
                 ?: layout.findViewById(org.videolan.R.id.texture_video)
-                ?: return@SideEffect
-            picture.scaleX = pictureScaleX
-            picture.scaleY = pictureScaleY
-            picture.translationX = picturePanX
-            picture.translationY = picturePanY
+            if (picture != null) {
+                picture.scaleX = pictureScaleX
+                picture.scaleY = pictureScaleY
+                picture.translationX = picturePanX
+                picture.translationY = picturePanY
+            }
+            // Keep LibVLC's dedicated subtitle surface strictly unscaled and inside viewport bounds.
+            val subtitlesView = layout.findViewById<android.view.View>(org.videolan.R.id.surface_subtitles)
+            if (subtitlesView != null) {
+                subtitlesView.scaleX = 1f
+                subtitlesView.scaleY = 1f
+                subtitlesView.translationX = 0f
+                subtitlesView.translationY = 0f
+            }
         }
 
         // Picture profiles (Vivid / Cinema / Natural) are applied natively by LibVLC's
