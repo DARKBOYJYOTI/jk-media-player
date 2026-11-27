@@ -237,17 +237,10 @@ fun MusicScreen(
         currentNavTab = 0
     }
 
-    // Double back to exit when at root Home and player sheet is closed
+    // Single back on root Home minimizes the app to the background instead of finishing it
     val context = androidx.compose.ui.platform.LocalContext.current
-    var lastBackPressTime by remember { mutableLongStateOf(0L) }
     BackHandler(enabled = !isPlayerSheetExpanded && !showSearchScreen && selectedFolder == null && selectedArtist == null && selectedAlbum == null && selectedPlaylist == null && currentNavTab == 0) {
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastBackPressTime < 2000) {
-            (context as? android.app.Activity)?.finish()
-        } else {
-            lastBackPressTime = currentTime
-            AppToast.show("Press back again to exit")
-        }
+        (context as? android.app.Activity)?.moveTaskToBack(true)
     }
 
     // Persistent scroll states to preserve exact user scroll position across back navigation
@@ -352,9 +345,9 @@ fun MusicScreen(
         }
     }
 
-    // Truly Recently Added tracks sorted by dateAdded descending (up to 50 tracks)
+    // All tracks sorted by dateAdded descending (most recently added first)
     val recentlyAddedTracks = remember(tracks) {
-        tracks.sortedByDescending { it.dateAdded }.take(50)
+        tracks.sortedByDescending { it.dateAdded }
     }
 
     // Artwork is loaded on demand: cards request it when they are composed (Coil interceptor) and

@@ -57,6 +57,9 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.boundsInWindow
 import androidx.compose.ui.layout.onGloballyPositioned
@@ -939,6 +942,44 @@ fun NowPlayingSheet(
                 ) {
                     val safeTotal = if (totalDurationMs > 0) totalDurationMs else track.duration
                     val artSize = minOf(maxWidth - 12.dp, maxHeight - 8.dp).coerceAtLeast(48.dp)
+                    val swipeThresholdPx = with(LocalDensity.current) { 52.dp.toPx() }
+
+                    // Detect overscroll swipes past the first/last track when repeat is off and
+                    // surface the same queue-boundary toast without triggering a 3s restart.
+                    val edgeSwipeConnection = remember(pagerState, pagerPageCount, wrapsQueue, swipeThresholdPx) {
+                        object : NestedScrollConnection {
+                            private var accumulatedX = 0f
+                            private var toasted = false
+
+                            override fun onPostScroll(
+                                consumed: androidx.compose.ui.geometry.Offset,
+                                available: androidx.compose.ui.geometry.Offset,
+                                source: NestedScrollSource
+                            ): androidx.compose.ui.geometry.Offset {
+                                if (source == NestedScrollSource.UserInput && !wrapsQueue && available.x != 0f) {
+                                    accumulatedX += available.x
+                                    if (!toasted) {
+                                        if (pagerState.currentPage == 0 && accumulatedX > swipeThresholdPx) {
+                                            toasted = true
+                                            AppToast.show("No previous song in queue")
+                                        } else if (pagerState.currentPage == pagerPageCount - 1 && accumulatedX < -swipeThresholdPx) {
+                                            toasted = true
+                                            AppToast.show("No next song in queue")
+                                        }
+                                    }
+                                }
+                                return androidx.compose.ui.geometry.Offset.Zero
+                            }
+
+                            override suspend fun onPreFling(
+                                available: androidx.compose.ui.unit.Velocity
+                            ): androidx.compose.ui.unit.Velocity {
+                                accumulatedX = 0f
+                                toasted = false
+                                return androidx.compose.ui.unit.Velocity.Zero
+                            }
+                        }
+                    }
 
                     @Suppress("DEPRECATION")
                     CompositionLocalProvider(LocalOverscrollConfiguration provides null) {
@@ -953,7 +994,37 @@ fun NowPlayingSheet(
                             val sentinel = wrapsQueue && (page == 0 || page == pagerPageCount - 1)
                             "${effectivePlaylist.getOrNull(index)?.id ?: "page"}_$index${if (sentinel) "_wrap$page" else ""}"
                         },
-                        modifier = Modifier.fillMaxSize()
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .nestedScroll(edgeSwipeConnection)
+                            .then(
+                                if (effectivePlaylist.size <= 1) {
+                                    Modifier.pointerInput(effectivePlaylist.size, repeatMode, swipeThresholdPx) {
+                                        var totalDragX = 0f
+                                        detectHorizontalDragGestures(
+                                            onDragStart = { totalDragX = 0f },
+                                            onDragCancel = { totalDragX = 0f },
+                                            onHorizontalDrag = { _, dragAmount ->
+                                                totalDragX += dragAmount
+                                            },
+                                            onDragEnd = {
+                                                // Album art swipe is an explicit track-change gesture,
+                                                // so it bypasses the 3s restart rule on single-song queues.
+                                                if (totalDragX < -swipeThresholdPx) {
+                                                    if (repeatMode != 0) onSeekTo(0L)
+                                                    else AppToast.show("No next song in queue")
+                                                } else if (totalDragX > swipeThresholdPx) {
+                                                    if (repeatMode != 0) onSeekTo(0L)
+                                                    else AppToast.show("No previous song in queue")
+                                                }
+                                                totalDragX = 0f
+                                            }
+                                        )
+                                    }
+                                } else {
+                                    Modifier
+                                }
+                            )
                     ) { pageIndex ->
                         val pageTrack = effectivePlaylist.getOrNull(trackIndexForPage(pageIndex)) ?: track
                         val isCurrentPage = pageIndex == pagerState.currentPage

@@ -269,7 +269,6 @@ fun VideoAppRoot(
     val refreshScope = rememberCoroutineScope()
 
     val context = androidx.compose.ui.platform.LocalContext.current
-    var lastBackPressTime by remember { mutableLongStateOf(0L) }
 
     // Intercept back button for Search page
     BackHandler(enabled = showSearchPage) {
@@ -286,15 +285,9 @@ fun VideoAppRoot(
         selectedVideoFolder = null
     }
 
-    // Double back to exit when at root video folder explorer to prevent accidental exit
+    // Single back on root folder explorer minimizes the app to the background instead of finishing it
     BackHandler(enabled = !showSearchPage && !showSettingsPage && selectedVideoFolder == null) {
-        val currentTime = System.currentTimeMillis()
-        if (currentTime - lastBackPressTime < 2000) {
-            (context as? android.app.Activity)?.finish()
-        } else {
-            lastBackPressTime = currentTime
-            AppToast.show("Press back again to exit")
-        }
+        (context as? android.app.Activity)?.moveTaskToBack(true)
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current

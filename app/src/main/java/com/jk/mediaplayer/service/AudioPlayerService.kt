@@ -224,8 +224,9 @@ class AudioPlayerService : Service() {
 
     private fun setupMediaSession() {
         mediaSession = MediaSessionCompat(this, "JKMediaSession").apply {
-            // Required for headset/Bluetooth buttons and for OEM media surfaces (OriginOS island,
-            // EMUI capsule) that only bind sessions advertising media button handling.
+            // Required for headset/Bluetooth buttons and for OEM media surfaces that only bind
+            // sessions advertising media button handling.
+            @Suppress("DEPRECATION")
             setFlags(
                 MediaSessionCompat.FLAG_HANDLES_MEDIA_BUTTONS or
                     MediaSessionCompat.FLAG_HANDLES_TRANSPORT_CONTROLS

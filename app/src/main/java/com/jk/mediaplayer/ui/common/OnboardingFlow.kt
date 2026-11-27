@@ -2,7 +2,6 @@ package com.jk.mediaplayer.ui.common
 
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.Spring
@@ -86,13 +85,12 @@ private data class OnboardingSlide(
     val subtitle: String,
     val primaryIcon: ImageVector,
     val secondaryIcon: ImageVector,
-    val accent: Color,
-    val secondaryAccent: Color,
     val highlights: List<String>
 )
 
 /**
  * Full-screen first-launch onboarding slider tailored to either the Music or Video app.
+ * Uses each app's fixed brand accent color across every slide.
  */
 @Composable
 fun AppOnboardingSlider(
@@ -100,6 +98,11 @@ fun AppOnboardingSlider(
     isDark: Boolean,
     onFinish: () -> Unit
 ) {
+    val brandAccent = when (mode) {
+        OnboardingMode.MUSIC -> MusicRed
+        OnboardingMode.VIDEO -> VideoIndigo
+    }
+
     val slides = remember(mode) {
         when (mode) {
             OnboardingMode.MUSIC -> listOf(
@@ -109,8 +112,6 @@ fun AppOnboardingSlider(
                     subtitle = "Enjoy lossless FLAC, Opus, MP3, and WAV tracks with smooth crossfades and system DSP equalizer integration.",
                     primaryIcon = Icons.Default.Headphones,
                     secondaryIcon = Icons.Default.GraphicEq,
-                    accent = MusicRed,
-                    secondaryAccent = Color(0xFFFF6B6B),
                     highlights = listOf("Hi-Res Audio", "Smooth Fades", "DSP Equalizer")
                 ),
                 OnboardingSlide(
@@ -119,8 +120,6 @@ fun AppOnboardingSlider(
                     subtitle = "Browse by songs, albums, artists, and folders with adaptive album-art gradients and zero-lag search.",
                     primaryIcon = Icons.Default.LibraryMusic,
                     secondaryIcon = Icons.Default.Album,
-                    accent = Color(0xFFE91E63),
-                    secondaryAccent = Color(0xFFFF8A65),
                     highlights = listOf("Folder View", "Adaptive Art", "Quick Picks")
                 ),
                 OnboardingSlide(
@@ -129,8 +128,6 @@ fun AppOnboardingSlider(
                     subtitle = "Edit track metadata, update cover art, view lyrics, and trim any song into a custom ringtone in seconds.",
                     primaryIcon = Icons.Default.ContentCut,
                     secondaryIcon = Icons.Default.Tune,
-                    accent = Color(0xFFFF5722),
-                    secondaryAccent = Color(0xFFFFB74D),
                     highlights = listOf("ID3 Tags", "Lyrics View", "Ringtone Maker")
                 )
             )
@@ -141,8 +138,6 @@ fun AppOnboardingSlider(
                     subtitle = "Play MKV, MP4, HEVC, and network streams effortlessly with hardware acceleration and multi-track subtitles.",
                     primaryIcon = Icons.Default.PlayCircleFilled,
                     secondaryIcon = Icons.Default.HighQuality,
-                    accent = VideoIndigo,
-                    secondaryAccent = Color(0xFF818CF8),
                     highlights = listOf("HW Decode", "Multi-Audio", "Subtitles")
                 ),
                 OnboardingSlide(
@@ -151,8 +146,6 @@ fun AppOnboardingSlider(
                     subtitle = "Swipe smoothly to adjust brightness, volume, and seek position with customizable aspect ratios and color profiles.",
                     primaryIcon = Icons.Default.TouchApp,
                     secondaryIcon = Icons.Default.Subtitles,
-                    accent = Color(0xFF4F46E5),
-                    secondaryAccent = Color(0xFF38BDF8),
                     highlights = listOf("Swipe Controls", "Custom Aspect", "Vivid & Cinema")
                 ),
                 OnboardingSlide(
@@ -161,8 +154,6 @@ fun AppOnboardingSlider(
                     subtitle = "Keep videos organized by folder, resume right where you left off, or switch to background audio anytime.",
                     primaryIcon = Icons.Default.Folder,
                     secondaryIcon = Icons.Default.Equalizer,
-                    accent = Color(0xFF7C3AED),
-                    secondaryAccent = Color(0xFFA78BFA),
                     highlights = listOf("Instant Resume", "Background Play", "Folder Explorer")
                 )
             )
@@ -173,17 +164,6 @@ fun AppOnboardingSlider(
     val scope = rememberCoroutineScope()
     val currentSlide = slides[pagerState.currentPage]
     val isLastPage = pagerState.currentPage == slides.lastIndex
-
-    val animatedAccent by animateColorAsState(
-        targetValue = currentSlide.accent,
-        animationSpec = tween(420, easing = FastOutSlowInEasing),
-        label = "onboardingAccent"
-    )
-    val animatedSecondary by animateColorAsState(
-        targetValue = currentSlide.secondaryAccent,
-        animationSpec = tween(420, easing = FastOutSlowInEasing),
-        label = "onboardingSecondaryAccent"
-    )
 
     val bgColor = if (isDark) Color(0xFF0A0A0F) else Color(0xFFF8F9FC)
     val textPrimary = if (isDark) Color.White else Color(0xFF14161F)
@@ -207,7 +187,7 @@ fun AppOnboardingSlider(
             .fillMaxSize()
             .background(bgColor)
     ) {
-        // Ambient top radial glow that transitions smoothly with each slide.
+        // Fixed ambient top radial glow matching the app's brand color.
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -215,8 +195,8 @@ fun AppOnboardingSlider(
                 .background(
                     Brush.radialGradient(
                         colors = listOf(
-                            animatedAccent.copy(alpha = if (isDark) 0.28f else 0.16f),
-                            animatedSecondary.copy(alpha = if (isDark) 0.10f else 0.06f),
+                            brandAccent.copy(alpha = if (isDark) 0.28f else 0.16f),
+                            brandAccent.copy(alpha = if (isDark) 0.10f else 0.05f),
                             Color.Transparent
                         )
                     )
@@ -238,12 +218,12 @@ fun AppOnboardingSlider(
             ) {
                 Surface(
                     shape = RoundedCornerShape(50),
-                    color = animatedAccent.copy(alpha = if (isDark) 0.18f else 0.12f),
-                    border = BorderStroke(1.dp, animatedAccent.copy(alpha = 0.30f))
+                    color = brandAccent.copy(alpha = if (isDark) 0.18f else 0.12f),
+                    border = BorderStroke(1.dp, brandAccent.copy(alpha = 0.30f))
                 ) {
                     Text(
                         text = currentSlide.badge,
-                        color = animatedAccent,
+                        color = brandAccent,
                         fontSize = 11.sp,
                         fontWeight = FontWeight.Bold,
                         letterSpacing = 1.2.sp,
@@ -310,8 +290,8 @@ fun AppOnboardingSlider(
                                 .background(
                                     Brush.linearGradient(
                                         colors = listOf(
-                                            slide.accent.copy(alpha = if (isDark) 0.26f else 0.18f),
-                                            slide.secondaryAccent.copy(alpha = if (isDark) 0.12f else 0.08f)
+                                            brandAccent.copy(alpha = if (isDark) 0.26f else 0.18f),
+                                            brandAccent.copy(alpha = if (isDark) 0.10f else 0.06f)
                                         )
                                     )
                                 )
@@ -330,7 +310,7 @@ fun AppOnboardingSlider(
                                     .background(
                                         Brush.linearGradient(
                                             colors = listOf(
-                                                slide.accent.copy(alpha = if (isDark) 0.22f else 0.14f),
+                                                brandAccent.copy(alpha = if (isDark) 0.22f else 0.14f),
                                                 Color.Transparent
                                             )
                                         )
@@ -340,7 +320,7 @@ fun AppOnboardingSlider(
                                 Icon(
                                     imageVector = slide.primaryIcon,
                                     contentDescription = null,
-                                    tint = slide.accent,
+                                    tint = brandAccent,
                                     modifier = Modifier.size(68.dp)
                                 )
                             }
@@ -349,7 +329,7 @@ fun AppOnboardingSlider(
                         // Floating secondary accent badge.
                         Surface(
                             shape = CircleShape,
-                            color = slide.accent,
+                            color = brandAccent,
                             shadowElevation = 6.dp,
                             modifier = Modifier
                                 .align(Alignment.BottomEnd)
@@ -437,7 +417,7 @@ fun AppOnboardingSlider(
                             .width(pillWidth)
                             .clip(CircleShape)
                             .background(
-                                if (selected) animatedAccent
+                                if (selected) brandAccent
                                 else textSecondary.copy(alpha = 0.28f)
                             )
                     )
@@ -456,7 +436,7 @@ fun AppOnboardingSlider(
                     }
                 },
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = animatedAccent,
+                    containerColor = brandAccent,
                     contentColor = Color.White
                 ),
                 shape = RoundedCornerShape(18.dp),
