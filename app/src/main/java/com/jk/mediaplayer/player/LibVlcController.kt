@@ -665,7 +665,7 @@ class LibVlcController(
                 val (hwEnabled, forceHW) = when (hwMode) {
                     "FORCE_HW" -> Pair(true, true)
                     "SOFTWARE" -> Pair(false, false)
-                    else -> Pair(true, true)
+                    else -> Pair(true, false)
                 }
                 if (isLocalAudioFile) {
                     media.setHWDecoderEnabled(false, false)
@@ -686,23 +686,26 @@ class LibVlcController(
                         media.addOption(":deinterlace=0")
                     }
                 }
-                // The display picture profile and the 32-bit colour option were stored by the video
-                // settings screen but never reached the decoder. Media options are applied per file,
-                // so a profile change is picked up by the next video (and never by music playback).
-                when (prefs.getVideoEnhancerMode()) {
-                    "VIVID" -> {
-                        media.addOption(":video-filter=adjust")
-                        media.addOption(":contrast=1.10")
-                        media.addOption(":saturation=1.18")
-                        media.addOption(":gamma=0.98")
-                        media.addOption(":brightness=1.02")
-                    }
-                    "CINEMA" -> {
-                        media.addOption(":video-filter=adjust")
-                        media.addOption(":contrast=1.06")
-                        media.addOption(":saturation=0.94")
-                        media.addOption(":gamma=1.06")
-                        media.addOption(":brightness=0.98")
+                // Apply LibVLC's CPU "adjust" filter only under software decoding where it operates
+                // on decoded frames. Under MediaCodec hardware decoding, picture profiles are
+                // applied instantaneously by the player's hardware-composited grading layer without
+                // breaking zero-copy HW output or forcing a software fallback.
+                if (hwMode == "SOFTWARE") {
+                    when (prefs.getVideoEnhancerMode()) {
+                        "VIVID" -> {
+                            media.addOption(":video-filter=adjust")
+                            media.addOption(":contrast=1.10")
+                            media.addOption(":saturation=1.18")
+                            media.addOption(":gamma=0.98")
+                            media.addOption(":brightness=1.02")
+                        }
+                        "CINEMA" -> {
+                            media.addOption(":video-filter=adjust")
+                            media.addOption(":contrast=1.06")
+                            media.addOption(":saturation=0.94")
+                            media.addOption(":gamma=1.06")
+                            media.addOption(":brightness=0.98")
+                        }
                     }
                 }
                 if (prefs.isVideoHighColorQuality()) {

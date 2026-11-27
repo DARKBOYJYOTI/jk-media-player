@@ -633,7 +633,7 @@ fun clearMetadataCache() {
         videoQualityVersion++
     }
 
-    fun isVideoHighColorQuality(): Boolean = prefs.getBoolean("video_high_color", true)
+    fun isVideoHighColorQuality(): Boolean = prefs.getBoolean("video_high_color", false)
     fun setVideoHighColorQuality(enabled: Boolean) {
         prefs.edit().putBoolean("video_high_color", enabled).apply()
         videoQualityVersion++

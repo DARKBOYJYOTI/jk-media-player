@@ -261,64 +261,76 @@ fun MusicScreen(
         tracks.filter { favoriteIds.contains(it.id.toString()) }
     }
 
-    // Artists sorted alphabetically, with smart multi-artist deduplication & grouping!
-    val artists = remember(tracks) {
-        val artistCaseMap = mutableMapOf<String, String>()
-        val artistTracksMap = mutableMapOf<String, MutableList<AudioItem>>()
+    // Compute artists, albums, folders, and recently-added order off the UI thread so edits,
+    // deletions, or rescans on large libraries never drop frames on the main thread.
+    var artists by remember { mutableStateOf<List<ArtistItem>>(emptyList()) }
+    var albums by remember { mutableStateOf<List<AlbumItem>>(emptyList()) }
+    var folders by remember { mutableStateOf<List<AudioFolder>>(emptyList()) }
+    var recentlyAddedTracks by remember { mutableStateOf<List<AudioItem>>(emptyList()) }
 
-        tracks.forEach { track ->
-            val splitList = splitArtistNames(track.artist)
-            if (splitList.isEmpty()) {
-                val key = "unknown artist"
-                artistCaseMap.putIfAbsent(key, "Unknown Artist")
-                artistTracksMap.getOrPut(key) { mutableListOf() }.add(track)
-            } else {
-                splitList.forEach { singleArtist ->
-                    val lower = singleArtist.lowercase()
-                    artistCaseMap.putIfAbsent(lower, singleArtist)
-                    val list = artistTracksMap.getOrPut(lower) { mutableListOf() }
-                    if (list.none { it.id == track.id }) {
-                        list.add(track)
+    LaunchedEffect(tracks) {
+        withContext(Dispatchers.Default) {
+            val artistCaseMap = mutableMapOf<String, String>()
+            val artistTracksMap = mutableMapOf<String, MutableList<AudioItem>>()
+
+            tracks.forEach { track ->
+                val splitList = splitArtistNames(track.artist)
+                if (splitList.isEmpty()) {
+                    val key = "unknown artist"
+                    artistCaseMap.putIfAbsent(key, "Unknown Artist")
+                    artistTracksMap.getOrPut(key) { mutableListOf() }.add(track)
+                } else {
+                    splitList.forEach { singleArtist ->
+                        val lower = singleArtist.lowercase()
+                        artistCaseMap.putIfAbsent(lower, singleArtist)
+                        val list = artistTracksMap.getOrPut(lower) { mutableListOf() }
+                        if (list.none { it.id == track.id }) {
+                            list.add(track)
+                        }
                     }
                 }
             }
-        }
 
-        artistTracksMap.map { (lowerKey, trackList) ->
-            val displayName = artistCaseMap[lowerKey] ?: lowerKey.replaceFirstChar { it.uppercase() }
-            ArtistItem(
-                name = displayName,
-                trackCount = trackList.size,
-                tracks = trackList,
-                artistImageUrl = null
-            )
-        }.sortedWith(
-            compareBy(
-                { it.name.equals("Unknown Artist", ignoreCase = true) || it.name.isBlank() },
-                { it.name.lowercase() }
-            )
-        )
-    }
-
-    // Albums sorted alphabetically, with Unknown Album strictly at the very end!
-    val albums = remember(tracks) {
-        tracks.groupBy { it.album.ifBlank { "Unknown Album" } }
-            .map { (album, list) ->
-                AlbumItem(
-                    name = album,
-                    artist = list.firstOrNull()?.artist ?: "Unknown Artist",
-                    albumArtUri = list.firstOrNull()?.albumArtUri,
-                    tracks = list
+            val computedArtists = artistTracksMap.map { (lowerKey, trackList) ->
+                val displayName = artistCaseMap[lowerKey] ?: lowerKey.replaceFirstChar { it.uppercase() }
+                ArtistItem(
+                    name = displayName,
+                    trackCount = trackList.size,
+                    tracks = trackList,
+                    artistImageUrl = null
                 )
-            }.sortedWith(compareBy({ it.name.equals("Unknown Album", ignoreCase = true) || it.name.isBlank() }, { it.name }))
-    }
+            }.sortedWith(
+                compareBy(
+                    { it.name.equals("Unknown Artist", ignoreCase = true) || it.name.isBlank() },
+                    { it.name.lowercase() }
+                )
+            )
 
-    val folders = remember(tracks) {
-        tracks.groupBy { it.folderPath.ifBlank { try { java.io.File(it.path).parent ?: it.folderName } catch (_: Exception) { it.folderName } } }
-            .map { (fPath, list) ->
-                val folderName = list.firstOrNull()?.folderName?.ifBlank { try { java.io.File(fPath).name } catch (_: Exception) { "Music" } } ?: "Music"
-                AudioFolder(folderName, fPath, list)
-            }.sortedBy { it.name.lowercase() }
+            val computedAlbums = tracks.groupBy { it.album.ifBlank { "Unknown Album" } }
+                .map { (album, list) ->
+                    AlbumItem(
+                        name = album,
+                        artist = list.firstOrNull()?.artist ?: "Unknown Artist",
+                        albumArtUri = list.firstOrNull()?.albumArtUri,
+                        tracks = list
+                    )
+                }.sortedWith(compareBy({ it.name.equals("Unknown Album", ignoreCase = true) || it.name.isBlank() }, { it.name }))
+
+            val computedFolders = tracks.groupBy { it.folderPath.ifBlank { try { java.io.File(it.path).parent ?: it.folderName } catch (_: Exception) { it.folderName } } }
+                .map { (fPath, list) ->
+                    val folderName = list.firstOrNull()?.folderName?.ifBlank { try { java.io.File(fPath).name } catch (_: Exception) { "Music" } } ?: "Music"
+                    AudioFolder(folderName, fPath, list)
+                }.sortedBy { it.name.lowercase() }
+
+            val computedRecent = tracks.sortedByDescending { it.dateAdded }
+
+            withContext(Dispatchers.Main) {
+                artists = computedArtists
+                albums = computedAlbums
+                folders = computedFolders
+                recentlyAddedTracks = computedRecent
+            }
+        }
     }
 
     // Number of user playlists, shown next to the section name in the header
@@ -343,11 +355,6 @@ fun MusicScreen(
             selectedPlaylist = null
             onResetTargetArtistAlbum()
         }
-    }
-
-    // All tracks sorted by dateAdded descending (most recently added first)
-    val recentlyAddedTracks = remember(tracks) {
-        tracks.sortedByDescending { it.dateAdded }
     }
 
     // Artwork is loaded on demand: cards request it when they are composed (Coil interceptor) and

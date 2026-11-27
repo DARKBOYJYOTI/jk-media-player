@@ -291,13 +291,18 @@ fun VideoAppRoot(
     }
 
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
+    var lastResumeScanMs by remember { mutableLongStateOf(0L) }
     DisposableEffect(lifecycleOwner, hasPermission) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
             if (event == androidx.lifecycle.Lifecycle.Event.ON_RESUME && hasPermission) {
-                refreshScope.launch {
-                    val newFolders = MediaScanner.scanVideos(context)
-                    if (newFolders != videoFolders) {
-                        videoFolders = newFolders
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (now - lastResumeScanMs >= 15_000L) {
+                    lastResumeScanMs = now
+                    refreshScope.launch {
+                        val newFolders = MediaScanner.scanVideos(context)
+                        if (newFolders != videoFolders) {
+                            videoFolders = newFolders
+                        }
                     }
                 }
             }

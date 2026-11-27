@@ -1929,8 +1929,40 @@ fun GestureVideoPlayerScreen(
             picture.translationY = picturePanY
         }
 
-        // Display picture profile (Vivid / Cinema / Natural) is applied by the native decoder via
-        // the "adjust" video filter, so no Compose colour overlay is needed here.
+        // Hardware-composited display picture profile layer (Vivid / Cinema / Natural).
+        // Under MediaCodec hardware decoding, LibVLC's CPU "adjust" filter is bypassed on opaque
+        // surfaces, so this zero-overhead GPU layer applies Vivid / Cinema instantaneously without
+        // reloading the video. Under SOFTWARE decoding, LibVLC's native adjust filter handles it.
+        val qualityVersion = com.jk.mediaplayer.data.PreferencesManager.videoQualityVersion
+        val activeProfileMode = remember(qualityVersion) { prefs.getVideoEnhancerMode() }
+        val activeHwMode = remember(qualityVersion) { prefs.getVideoHwDecoder() }
+        if (activeHwMode != "SOFTWARE" && activeProfileMode != "STANDARD") {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(
+                        when (activeProfileMode) {
+                            "CINEMA" -> androidx.compose.ui.graphics.Brush.radialGradient(
+                                colors = listOf(
+                                    Color(0x14FF9E44),
+                                    Color(0x1CFF9233),
+                                    Color(0x30000000)
+                                )
+                            )
+                            "VIVID" -> androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(
+                                    Color(0x1000D4FF),
+                                    Color(0x0AFFFFFF),
+                                    Color(0x14000000)
+                                )
+                            )
+                            else -> androidx.compose.ui.graphics.Brush.verticalGradient(
+                                colors = listOf(Color.Transparent, Color.Transparent)
+                            )
+                        }
+                    )
+            )
+        }
 
         if (!isInPip) {
         // Unified Gesture Touch Overlay
@@ -3591,7 +3623,9 @@ fun GestureVideoPlayerScreen(
                                         .clickable {
                                             profileMode = mode
                                             prefs.setVideoEnhancerMode(mode)
-                                            (context as? VideoPlayerActivity)?.reloadCurrentVideo()
+                                            if (hwMode == "SOFTWARE") {
+                                                (context as? VideoPlayerActivity)?.reloadCurrentVideo()
+                                            }
                                             AppToast.show("Picture profile: $label")
                                         }
                                 ) {
@@ -3743,11 +3777,11 @@ fun GestureVideoPlayerScreen(
                                     profileMode = "STANDARD"
                                     hwMode = "AUTO"
                                     deinterlace = "AUTO"
-                                    highColor = true
+                                    highColor = false
                                     prefs.setVideoEnhancerMode("STANDARD")
                                     prefs.setVideoHwDecoder("AUTO")
                                     prefs.setVideoDeinterlaceMode("AUTO")
-                                    prefs.setVideoHighColorQuality(true)
+                                    prefs.setVideoHighColorQuality(false)
                                     (context as? VideoPlayerActivity)?.reloadCurrentVideo()
                                     AppToast.show("Video display settings reset to default")
                                 }
@@ -3772,7 +3806,7 @@ fun GestureVideoPlayerScreen(
 
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Decoder, colour and deinterlace changes apply from the next video.",
+                            text = "Picture profiles apply instantly. Decoder, 32-bit colour, and deinterlace reload the video.",
                             fontSize = 11.sp,
                             color = Color.White.copy(alpha = 0.4f)
                         )

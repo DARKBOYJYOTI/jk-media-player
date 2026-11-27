@@ -908,11 +908,11 @@ fun VideoSettingsScreen(
                                 videoEnhancerMode = "STANDARD"
                                 videoHwDecoder = "AUTO"
                                 videoDeinterlace = "AUTO"
-                                videoHighColor = true
+                                videoHighColor = false
                                 prefsManager.setVideoEnhancerMode("STANDARD")
                                 prefsManager.setVideoHwDecoder("AUTO")
                                 prefsManager.setVideoDeinterlaceMode("AUTO")
-                                prefsManager.setVideoHighColorQuality(true)
+                                prefsManager.setVideoHighColorQuality(false)
                                 AppToast.show("Video display settings reset to default")
                             }
                             .padding(vertical = 8.dp),
