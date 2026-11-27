@@ -1,7 +1,13 @@
 package com.jk.mediaplayer.ui.video
 
-import com.jk.mediaplayer.ui.common.GlobalAppToastHost
+import com.jk.mediaplayer.data.AppUpdateChecker
+import com.jk.mediaplayer.data.AppUpdateInfo
+import com.jk.mediaplayer.ui.common.AppOnboardingSlider
 import com.jk.mediaplayer.ui.common.AppToast
+import com.jk.mediaplayer.ui.common.AppUpdateDialog
+import com.jk.mediaplayer.ui.common.GlobalAppToastHost
+import com.jk.mediaplayer.ui.common.OnboardingMode
+import com.jk.mediaplayer.ui.common.StoragePermissionOnboardingModal
 
 import android.Manifest
 import android.content.Intent
@@ -47,6 +53,7 @@ class VideoActivity : ComponentActivity() {
 
     private lateinit var prefsManager: PreferencesManager
     private var hasStoragePermission by mutableStateOf(false)
+    private var hasNotificationPermission by mutableStateOf(true)
 
     private val requestPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestMultiplePermissions()
@@ -62,13 +69,21 @@ class VideoActivity : ComponentActivity() {
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { }
+    ) {
+        hasNotificationPermission = checkNotificationPermission()
+    }
+
+    private fun checkNotificationPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
 
     private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !checkNotificationPermission()) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
@@ -78,8 +93,6 @@ class VideoActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
         prefsManager = PreferencesManager(this)
-
-        requestNotificationPermissionIfNeeded()
 
         enableEdgeToEdge(
             statusBarStyle = androidx.activity.SystemBarStyle.auto(
@@ -102,9 +115,7 @@ class VideoActivity : ComponentActivity() {
         }
 
         hasStoragePermission = checkStoragePermission()
-        if (!hasStoragePermission) {
-            requestStoragePermissions()
-        }
+        hasNotificationPermission = checkNotificationPermission()
 
         setContent {
             val systemDark = isSystemInDarkTheme()
@@ -114,30 +125,81 @@ class VideoActivity : ComponentActivity() {
                 "LIGHT" -> false
                 else -> systemDark
             }
+            var showOnboarding by remember {
+                mutableStateOf(!prefsManager.isVideoOnboardingCompleted())
+            }
+            var dismissedPermissionModal by remember { mutableStateOf(false) }
+            var availableUpdate by remember { mutableStateOf<AppUpdateInfo?>(null) }
+
+            LaunchedEffect(showOnboarding, hasStoragePermission) {
+                if (!showOnboarding && hasStoragePermission && !prefsManager.isUpdateSnoozed()) {
+                    availableUpdate = AppUpdateChecker.checkForUpdateIfNeeded()
+                }
+            }
 
             JKMediaPlayerTheme(isDark = isDark, accentColor = VideoIndigo) {
-                VideoAppRoot(
-                    hasPermission = hasStoragePermission,
-                    onRequestPermission = { requestStoragePermissions() },
-                    currentThemeMode = themeMode,
-                    onThemeChange = { newMode ->
-                        themeMode = newMode
-                        prefsManager.saveVideoThemeMode(newMode)
-                    },
-                    onPlayVideo = { video, playlist ->
-                        prefsManager.markVideoWatched(video.path)
-                        VideoPlayerActivity.playlist = playlist
-                        val idx = playlist.indexOfFirst { it.id == video.id }
-                        VideoPlayerActivity.currentVideoIndex = if (idx >= 0) idx else 0
-                        val playIntent = Intent(this@VideoActivity, VideoPlayerActivity::class.java).apply {
-                            putExtra("EXTRA_VIDEO_URI", video.uri.toString())
-                            putExtra("EXTRA_VIDEO_PATH", video.path)
-                            putExtra("EXTRA_VIDEO_TITLE", video.title)
-                            putExtra("EXTRA_IS_PORTRAIT", video.isPortrait)
+                if (showOnboarding) {
+                    AppOnboardingSlider(
+                        mode = OnboardingMode.VIDEO,
+                        isDark = isDark,
+                        onFinish = {
+                            prefsManager.setVideoOnboardingCompleted(true)
+                            showOnboarding = false
+                            if (hasStoragePermission && !hasNotificationPermission) {
+                                requestNotificationPermissionIfNeeded()
+                            }
                         }
-                        startActivity(playIntent)
+                    )
+                } else {
+                    VideoAppRoot(
+                        hasPermission = hasStoragePermission,
+                        onRequestPermission = { dismissedPermissionModal = false; requestStoragePermissions() },
+                        currentThemeMode = themeMode,
+                        onThemeChange = { newMode ->
+                            themeMode = newMode
+                            prefsManager.saveVideoThemeMode(newMode)
+                        },
+                        onPlayVideo = { video, playlist ->
+                            prefsManager.markVideoWatched(video.path)
+                            VideoPlayerActivity.playlist = playlist
+                            val idx = playlist.indexOfFirst { it.id == video.id }
+                            VideoPlayerActivity.currentVideoIndex = if (idx >= 0) idx else 0
+                            val playIntent = Intent(this@VideoActivity, VideoPlayerActivity::class.java).apply {
+                                putExtra("EXTRA_VIDEO_URI", video.uri.toString())
+                                putExtra("EXTRA_VIDEO_PATH", video.path)
+                                putExtra("EXTRA_VIDEO_TITLE", video.title)
+                                putExtra("EXTRA_IS_PORTRAIT", video.isPortrait)
+                            }
+                            startActivity(playIntent)
+                        }
+                    )
+
+                    if (!hasStoragePermission && !dismissedPermissionModal) {
+                        StoragePermissionOnboardingModal(
+                            appName = "JK Video",
+                            accentColor = VideoIndigo,
+                            isDark = isDark,
+                            hasStoragePermission = hasStoragePermission,
+                            hasNotificationPermission = hasNotificationPermission,
+                            onAllowStorage = { requestStoragePermissions() },
+                            onAllowNotifications = { requestNotificationPermissionIfNeeded() },
+                            onDismiss = { dismissedPermissionModal = true }
+                        )
                     }
-                )
+
+                    availableUpdate?.let { info ->
+                        AppUpdateDialog(
+                            updateInfo = info,
+                            accentColor = VideoIndigo,
+                            isDark = isDark,
+                            onIgnoreFor7Days = {
+                                prefsManager.snoozeUpdateFor7Days()
+                                availableUpdate = null
+                            },
+                            onDismiss = { availableUpdate = null }
+                        )
+                    }
+                }
             }
         }
     }
@@ -186,6 +248,7 @@ class VideoActivity : ComponentActivity() {
         if (perm != hasStoragePermission) {
             hasStoragePermission = perm
         }
+        hasNotificationPermission = checkNotificationPermission()
     }
 }
 

@@ -5,6 +5,7 @@ import androidx.compose.animation.core.*
 import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -86,8 +87,6 @@ fun MiniPlayerContent(
     miniArtworkAlpha: () -> Float = { 1f },
     // Same resolved tint used by the unified window background.
     backgroundColor: Color? = null,
-    // True while a YouTube Music stream is being resolved, so the card shows progress
-    // instead of pretending the song is ready to pause.
     isLoading: Boolean = false
 ) {
     if (track == null) return
@@ -103,7 +102,11 @@ fun MiniPlayerContent(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = null,
+                onClick = onClick
+            )
     ) {
         Box(
             modifier = Modifier
@@ -193,28 +196,37 @@ fun MiniPlayerContent(
                         )
                     }
 
-                    // Previous Track Button
-                    IconButton(
-                        onClick = onPrevious,
-                        enabled = canGoPrevious,
+                    // Previous Track Button (always tappable, no ripple)
+                    Box(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onPrevious
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipPrevious,
                             contentDescription = "Previous",
-                            tint = textColorPrimary.copy(alpha = if (canGoPrevious) 1f else 0.3f),
+                            tint = textColorPrimary,
                             modifier = Modifier.size(24.dp)
                         )
                     }
 
-                    // Play / Pause Button (Clean white/dark icon)
-                    IconButton(
-                        onClick = onTogglePlayPause,
+                    // Play / Pause Button (no ripple)
+                    Box(
                         modifier = Modifier
                             .size(42.dp)
                             .clip(CircleShape)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onTogglePlayPause
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
                         if (isLoading) {
                             CircularProgressIndicator(
@@ -232,18 +244,22 @@ fun MiniPlayerContent(
                         }
                     }
 
-                    // Next Track Button
-                    IconButton(
-                        onClick = onNext,
-                        enabled = canGoNext,
+                    // Next Track Button (always tappable, no ripple)
+                    Box(
                         modifier = Modifier
                             .size(38.dp)
                             .clip(CircleShape)
+                            .clickable(
+                                interactionSource = remember { MutableInteractionSource() },
+                                indication = null,
+                                onClick = onNext
+                            ),
+                        contentAlignment = Alignment.Center
                     ) {
                         Icon(
                             imageVector = Icons.Default.SkipNext,
                             contentDescription = "Next",
-                            tint = textColorPrimary.copy(alpha = if (canGoNext) 1f else 0.3f),
+                            tint = textColorPrimary,
                             modifier = Modifier.size(24.dp)
                         )
                     }

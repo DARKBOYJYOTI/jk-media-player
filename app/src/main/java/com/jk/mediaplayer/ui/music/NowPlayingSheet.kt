@@ -1144,37 +1144,57 @@ fun NowPlayingSheet(
                     val isTargetArtistUnknown = targetTrack.artist == "<unknown>" || targetTrack.artist.isBlank() || targetTrack.artist.equals("Unknown Artist", ignoreCase = true)
                     val cachedArtist = if (isTargetArtistUnknown) OnlineMetadataFetcher.getCachedArtistName(context, targetTrack.title) else null
                     val cleanArtist = if (isTargetArtistUnknown) (cachedArtist ?: "Unknown Artist") else targetTrack.artist
-                    // Every credit is individually tappable and the row scrolls sideways, so a
-                    // track with many collaborators still opens each artist's own page.
-                    val artistCredits = splitArtistNames(cleanArtist).ifEmpty { listOf(cleanArtist) }
-                    Row(
-                        modifier = Modifier
-                            .wrapContentWidth()
-                            .horizontalScroll(rememberScrollState()),
-                        horizontalArrangement = Arrangement.Center,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        artistCredits.forEachIndexed { creditIndex, creditName ->
-                            if (creditIndex > 0) {
+                    // Render a single artist as one clean marquee line; split into tappable
+                    // credits only when multiple collaborators exist.
+                    val artistCredits = remember(cleanArtist) {
+                        splitArtistNames(cleanArtist).ifEmpty { listOf(cleanArtist) }
+                    }
+                    if (artistCredits.size <= 1) {
+                        val singleArtist = artistCredits.firstOrNull() ?: cleanArtist
+                        Text(
+                            text = singleArtist,
+                            color = playerTextColorSecondary,
+                            fontSize = 15.sp,
+                            maxLines = 1,
+                            textAlign = TextAlign.Center,
+                            modifier = Modifier
+                                .clip(RoundedCornerShape(6.dp))
+                                .clickable(enabled = !isTargetArtistUnknown) {
+                                    onGoToArtist(singleArtist)
+                                }
+                                .padding(horizontal = 4.dp, vertical = 2.dp)
+                                .basicMarquee(iterations = Int.MAX_VALUE)
+                        )
+                    } else {
+                        Row(
+                            modifier = Modifier
+                                .wrapContentWidth()
+                                .horizontalScroll(rememberScrollState()),
+                            horizontalArrangement = Arrangement.Center,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            artistCredits.forEachIndexed { creditIndex, creditName ->
+                                if (creditIndex > 0) {
+                                    Text(
+                                        text = "•",
+                                        color = playerTextColorSecondary,
+                                        fontSize = 15.sp,
+                                        modifier = Modifier.padding(horizontal = 6.dp)
+                                    )
+                                }
                                 Text(
-                                    text = "•",
+                                    text = creditName,
                                     color = playerTextColorSecondary,
-                                    fontSize = 17.sp,
-                                    modifier = Modifier.padding(horizontal = 6.dp)
+                                    fontSize = 15.sp,
+                                    maxLines = 1,
+                                    modifier = Modifier
+                                        .clip(RoundedCornerShape(6.dp))
+                                        .clickable(enabled = !isTargetArtistUnknown) {
+                                            onGoToArtist(creditName)
+                                        }
+                                        .padding(horizontal = 2.dp, vertical = 2.dp)
                                 )
                             }
-                            Text(
-                                text = creditName,
-                                color = playerTextColorSecondary,
-                                fontSize = 15.sp,
-                                maxLines = 1,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable(enabled = !isTargetArtistUnknown) {
-                                        onGoToArtist(creditName)
-                                    }
-                                    .padding(horizontal = 2.dp, vertical = 2.dp)
-                            )
                         }
                     }
                 }
@@ -1340,7 +1360,7 @@ fun NowPlayingSheet(
                     imageVector = Icons.Default.SkipPrevious,
                     contentDescription = "Previous",
                     iconSize = 36.dp,
-                    enabled = canGoPrevious,
+                    enabled = true,
                     tint = playerIconTint
                 )
 
@@ -1382,7 +1402,7 @@ fun NowPlayingSheet(
                     imageVector = Icons.Default.SkipNext,
                     contentDescription = "Next",
                     iconSize = 36.dp,
-                    enabled = canGoNext,
+                    enabled = true,
                     tint = playerIconTint
                 )
 

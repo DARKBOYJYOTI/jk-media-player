@@ -959,6 +959,30 @@ fun clearMetadataCache() {
         )
     }
 
+    fun isMusicOnboardingCompleted(): Boolean =
+        prefs.getBoolean("music_onboarding_completed", false)
+
+    fun setMusicOnboardingCompleted(completed: Boolean) {
+        prefs.edit().putBoolean("music_onboarding_completed", completed).apply()
+    }
+
+    fun isVideoOnboardingCompleted(): Boolean =
+        prefs.getBoolean("video_onboarding_completed", false)
+
+    fun setVideoOnboardingCompleted(completed: Boolean) {
+        prefs.edit().putBoolean("video_onboarding_completed", completed).apply()
+    }
+
+    fun isUpdateSnoozed(nowMs: Long = System.currentTimeMillis()): Boolean {
+        val snoozedUntil = prefs.getLong("update_snoozed_until_ms", 0L)
+        return snoozedUntil > nowMs
+    }
+
+    fun snoozeUpdateFor7Days(nowMs: Long = System.currentTimeMillis()) {
+        val sevenDaysMs = 7L * 24L * 60L * 60L * 1000L
+        prefs.edit().putLong("update_snoozed_until_ms", nowMs + sevenDaysMs).apply()
+    }
+
 }
 
 data class PlaybackSession(

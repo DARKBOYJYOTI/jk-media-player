@@ -41,6 +41,7 @@ import coil.request.ImageRequest
 import com.jk.mediaplayer.R
 import com.jk.mediaplayer.model.AudioItem
 import com.jk.mediaplayer.ui.common.AppToast
+import com.jk.mediaplayer.ui.common.WriteSettingsPermissionModal
 import com.jk.mediaplayer.ui.theme.LightSurfaceVariant
 import com.jk.mediaplayer.ui.theme.LightTextPrimary
 import com.jk.mediaplayer.ui.theme.LightTextSecondary
@@ -62,6 +63,23 @@ fun RingtoneCutterDialog(
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
+
+    var hasWritePermission by remember {
+        mutableStateOf(RingtoneHelper.checkWriteSettingsPermission(context))
+    }
+    var continueSaveOnly by remember { mutableStateOf(false) }
+
+    // Prompt for Modify System Settings before opening the ringtone cutter when not yet granted.
+    if (!hasWritePermission && !continueSaveOnly) {
+        WriteSettingsPermissionModal(
+            accentColor = MusicRed,
+            isDark = isDark,
+            onPermissionGranted = { hasWritePermission = true },
+            onContinueWithoutPermission = { continueSaveOnly = true },
+            onDismiss = onDismiss
+        )
+        return
+    }
 
     val dialogBg = if (isDark) Color(0xFF14151B) else Color.White
     val cardBg = if (isDark) Color(0xFF1C1D26) else Color(0xFFF3F4F7)

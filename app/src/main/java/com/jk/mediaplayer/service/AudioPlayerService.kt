@@ -31,6 +31,7 @@ import com.jk.mediaplayer.model.AudioItem
 import com.jk.mediaplayer.player.AudioSession
 import com.jk.mediaplayer.player.LibVlcController
 import com.jk.mediaplayer.ui.MainActivity
+import com.jk.mediaplayer.ui.common.AppToast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -740,9 +741,13 @@ class AudioPlayerService : Service() {
         val tracks = _playlist.value
         if (tracks.isEmpty()) return
         if (tracks.size == 1) {
-            playerController?.seekTo(0L)
-            if (playerController?.isPlaying?.value != true) {
-                playerController?.play()
+            if (repeatMode.value != 0) {
+                playerController?.seekTo(0L)
+                if (playerController?.isPlaying?.value != true) {
+                    playerController?.play()
+                }
+            } else {
+                AppToast.show("No next song in queue")
             }
             return
         }
@@ -760,7 +765,7 @@ class AudioPlayerService : Service() {
             // Repeat All (and Repeat One) wrap back to the first track
             currentIndex = 0
         } else {
-            // End of queue with repeat off: keep the last track, no wrap around
+            AppToast.show("No next song in queue")
             return
         }
         playCurrent()
@@ -769,17 +774,25 @@ class AudioPlayerService : Service() {
     fun playPrevious() {
         val tracks = _playlist.value
         if (tracks.isEmpty()) return
-        if (tracks.size == 1) {
+        // Standard player behavior: past the restart threshold, restart the current track silently
+        // before attempting to step backward in the queue.
+        val currentPos = playerController?.currentPositionMs() ?: 0L
+        if (currentPos > previousRestartThresholdMs) {
             playerController?.seekTo(0L)
             if (playerController?.isPlaying?.value != true) {
                 playerController?.play()
             }
             return
         }
-        // Live position first: the cached tick can be stale right after a track change
-        val currentPos = playerController?.currentPositionMs() ?: 0L
-        if (currentPos > previousRestartThresholdMs) {
-            playerController?.seekTo(0L)
+        if (tracks.size == 1) {
+            if (repeatMode.value != 0) {
+                playerController?.seekTo(0L)
+                if (playerController?.isPlaying?.value != true) {
+                    playerController?.play()
+                }
+            } else {
+                AppToast.show("No previous song in queue")
+            }
             return
         }
         if (isShuffle.value && playHistory.size >= 2) {
@@ -793,10 +806,10 @@ class AudioPlayerService : Service() {
         }
         currentIndex = when {
             currentIndex - 1 >= 0 -> currentIndex - 1
-            // Repeat All / Repeat One wrap to the last track, plain "Off" just restarts this one
+            // Repeat All / Repeat One wrap to the last track
             repeatMode.value != 0 -> tracks.size - 1
             else -> {
-                playerController?.seekTo(0L)
+                AppToast.show("No previous song in queue")
                 return
             }
         }

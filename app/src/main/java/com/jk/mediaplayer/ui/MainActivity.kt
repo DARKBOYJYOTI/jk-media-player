@@ -1,7 +1,13 @@
 package com.jk.mediaplayer.ui
 
-import com.jk.mediaplayer.ui.common.GlobalAppToastHost
+import com.jk.mediaplayer.data.AppUpdateChecker
+import com.jk.mediaplayer.data.AppUpdateInfo
+import com.jk.mediaplayer.ui.common.AppOnboardingSlider
 import com.jk.mediaplayer.ui.common.AppToast
+import com.jk.mediaplayer.ui.common.AppUpdateDialog
+import com.jk.mediaplayer.ui.common.GlobalAppToastHost
+import com.jk.mediaplayer.ui.common.OnboardingMode
+import com.jk.mediaplayer.ui.common.StoragePermissionOnboardingModal
 import com.jk.mediaplayer.ui.video.VideoPlayerActivity
 
 import android.Manifest
@@ -147,6 +153,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private var hasStoragePermission by mutableStateOf(false)
+    private var hasNotificationPermission by mutableStateOf(true)
     private var shouldExpandNowPlaying by mutableStateOf(false)
 
     private val requestPermissionLauncher = registerForActivityResult(
@@ -163,13 +170,21 @@ class MainActivity : ComponentActivity() {
 
     private val notificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission()
-    ) { }
+    ) {
+        hasNotificationPermission = checkNotificationPermission()
+    }
+
+    private fun checkNotificationPermission(): Boolean {
+        return if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED
+        } else {
+            true
+        }
+    }
 
     private fun requestNotificationPermissionIfNeeded() {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
-            ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) !=
-            PackageManager.PERMISSION_GRANTED
-        ) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU && !checkNotificationPermission()) {
             notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
         }
     }
@@ -180,8 +195,6 @@ class MainActivity : ComponentActivity() {
         if (forwardToVideoPlayerIfBackgroundRunning(intent)) return
         setVolumeControlStream(AudioManager.STREAM_MUSIC)
         prefsManager = PreferencesManager(this)
-
-        requestNotificationPermissionIfNeeded()
 
         enableEdgeToEdge(
             statusBarStyle = androidx.activity.SystemBarStyle.auto(
@@ -212,9 +225,7 @@ class MainActivity : ComponentActivity() {
         bindService(serviceIntent, serviceConnection, Context.BIND_AUTO_CREATE)
 
         hasStoragePermission = checkStoragePermission()
-        if (!hasStoragePermission) {
-            requestStoragePermissions()
-        }
+        hasNotificationPermission = checkNotificationPermission()
 
         handleIncomingMediaIntent(intent)
 
@@ -226,27 +237,71 @@ class MainActivity : ComponentActivity() {
                 "LIGHT" -> false
                 else -> systemDark
             }
+            var showOnboarding by remember {
+                mutableStateOf(!prefsManager.isMusicOnboardingCompleted())
+            }
+            var dismissedPermissionModal by remember { mutableStateOf(false) }
 
             JKMediaPlayerTheme(isDark = isDark, accentColor = MusicRed) {
-                MusicAppRoot(
-                    hasPermission = hasStoragePermission,
-                    onRequestPermission = { requestStoragePermissions() },
-                    audioService = audioService,
-                    currentThemeMode = themeMode,
-                    shouldExpandNowPlaying = shouldExpandNowPlaying,
-                    onResetExpandNowPlaying = { shouldExpandNowPlaying = false },
-                    onThemeChange = { newMode ->
-                        themeMode = newMode
-                        prefsManager.saveMusicThemeMode(newMode)
-                    },
-                    onPlayTrackRequest = { trackList, index, source ->
-                        if (audioService != null) {
-                            audioService?.playTrackList(trackList, index, source)
-                        } else {
-                            pendingPlayTrack = Triple(trackList, index, source)
+                if (showOnboarding) {
+                    AppOnboardingSlider(
+                        mode = OnboardingMode.MUSIC,
+                        isDark = isDark,
+                        onFinish = {
+                            prefsManager.setMusicOnboardingCompleted(true)
+                            showOnboarding = false
+                            if (hasStoragePermission && !hasNotificationPermission) {
+                                requestNotificationPermissionIfNeeded()
+                            }
                         }
+                    )
+                } else {
+                    MusicAppRoot(
+                        hasPermission = hasStoragePermission,
+                        onRequestPermission = { dismissedPermissionModal = false; requestStoragePermissions() },
+                        audioService = audioService,
+                        currentThemeMode = themeMode,
+                        shouldExpandNowPlaying = shouldExpandNowPlaying,
+                        onResetExpandNowPlaying = { shouldExpandNowPlaying = false },
+                        onThemeChange = { newMode ->
+                            themeMode = newMode
+                            prefsManager.saveMusicThemeMode(newMode)
+                        },
+                        onPlayTrackRequest = { trackList, index, source ->
+                            if (audioService != null) {
+                                audioService?.playTrackList(trackList, index, source)
+                            } else {
+                                pendingPlayTrack = Triple(trackList, index, source)
+                            }
+                        }
+                    )
+
+                    if (!hasStoragePermission && !dismissedPermissionModal) {
+                        StoragePermissionOnboardingModal(
+                            appName = "JK Music",
+                            accentColor = MusicRed,
+                            isDark = isDark,
+                            hasStoragePermission = hasStoragePermission,
+                            hasNotificationPermission = hasNotificationPermission,
+                            onAllowStorage = { requestStoragePermissions() },
+                            onAllowNotifications = { requestNotificationPermissionIfNeeded() },
+                            onDismiss = { dismissedPermissionModal = true }
+                        )
                     }
-                )
+
+                    availableUpdate?.let { info ->
+                        AppUpdateDialog(
+                            updateInfo = info,
+                            accentColor = MusicRed,
+                            isDark = isDark,
+                            onIgnoreFor7Days = {
+                                prefsManager.snoozeUpdateFor7Days()
+                                availableUpdate = null
+                            },
+                            onDismiss = { availableUpdate = null }
+                        )
+                    }
+                }
             }
         }
     }
@@ -295,6 +350,7 @@ class MainActivity : ComponentActivity() {
         if (perm != hasStoragePermission) {
             hasStoragePermission = perm
         }
+        hasNotificationPermission = checkNotificationPermission()
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -1479,6 +1535,15 @@ private fun Modifier.playerDragHandle(
                     targetValue = if (expand) 1f else 0f,
                     animationSpec = spring(
                         dampingRatio = 0.85f,
+                        stiffness = Spring.StiffnessMediumLow
+                    ),
+                    initialVelocity = -velocityY / travelPx
+                )
+            }
+        }
+    }
+}
+ dampingRatio = 0.85f,
                         stiffness = Spring.StiffnessMediumLow
                     ),
                     initialVelocity = -velocityY / travelPx

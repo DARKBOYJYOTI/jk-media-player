@@ -95,12 +95,22 @@ fun splitArtistNames(raw: String): List<String> {
     // - Collaboration keywords: feat., ft., featuring, with, vs., x (surrounded by word boundaries)
     val regex = Regex("""[\s\u00A0\u3000]*(?:[,，、﹐;/／\\＼|｜&＆•·‧]|(?i:\b(?:feat\.?|ft\.?|featuring|with|vs\.?|x)\b))[\s\u00A0\u3000]*""")
     return trimmed.split(regex)
-        .map {
-            it.trim { ch ->
-                ch.isWhitespace() || ch == '\u00A0' || ch == '\u3000' || ch in "\"\'()[]{}\\,;，、﹐|/"
+        .map { part ->
+            var cleaned = part.trim { ch ->
+                ch.isWhitespace() || ch == '\u00A0' || ch == '\u3000' || ch in "\"',;，、﹐|/"
             }
+            // Strip only unmatched outer brackets so names like "Artist (Alias)" remain intact.
+            if (cleaned.startsWith("(") && cleaned.endsWith(")") && cleaned.count { it == '(' } == 1 && cleaned.count { it == ')' } == 1) {
+                cleaned = cleaned.substring(1, cleaned.length - 1).trim()
+            } else if (cleaned.startsWith("(") && !cleaned.contains(")")) {
+                cleaned = cleaned.removePrefix("(").trim()
+            } else if (cleaned.endsWith(")") && !cleaned.contains("(")) {
+                cleaned = cleaned.removeSuffix(")").trim()
+            }
+            cleaned
         }
         .filter { it.isNotBlank() && !it.equals("<unknown>", ignoreCase = true) && !it.equals("Unknown Artist", ignoreCase = true) }
+        .distinctBy { it.lowercase() }
 }
 
 fun resolveArtist(name: String, artists: List<ArtistItem>, tracks: List<AudioItem>): ArtistItem {
