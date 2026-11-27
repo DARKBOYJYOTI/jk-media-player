@@ -681,7 +681,6 @@ fun MusicAppRoot(
 
     var currentTrack by remember { mutableStateOf<AudioItem?>(null) }
     var isPlaying by remember { mutableStateOf(false) }
-    var currentTime by remember { mutableLongStateOf(0L) }
     val currentTimeState = remember { mutableLongStateOf(0L) }
     var totalDuration by remember { mutableLongStateOf(0L) }
     var playbackError by remember { mutableStateOf<String?>(null) }
@@ -727,7 +726,7 @@ fun MusicAppRoot(
         val service = audioService ?: return@LaunchedEffect
         launch { service.currentTrack.collect { currentTrack = it } }
         launch { service.playerController?.isPlaying?.collect { isPlaying = it } }
-        launch { service.playerController?.currentTime?.collect { currentTime = it; currentTimeState.longValue = it } }
+        launch { service.playerController?.currentTime?.collect { currentTimeState.longValue = it } }
         launch { service.playerController?.totalDuration?.collect { totalDuration = it } }
         launch { service.playbackError.collect { playbackError = it } }
     }
@@ -759,7 +758,12 @@ fun MusicAppRoot(
             if (MediaScanner.cachedMusic == null && tracks.isEmpty()) {
                 isScanning = true
             }
-            tracks = MediaScanner.scanMusic(context)
+            val scanned = MediaScanner.scanMusic(context)
+            // Skip state reassignment when the scanned library matches the restored cache,
+            // preventing a redundant full-tree recomposition while the user starts scrolling.
+            if (scanned != tracks) {
+                tracks = scanned
+            }
             isScanning = false
         } else {
             isScanning = false

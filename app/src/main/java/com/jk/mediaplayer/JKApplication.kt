@@ -2,13 +2,17 @@ package com.jk.mediaplayer
 
 import android.app.Application
 import android.content.Context
+import android.graphics.drawable.BitmapDrawable
 import coil.ImageLoader
 import coil.ImageLoaderFactory
+import coil.decode.DataSource
 import coil.decode.VideoFrameDecoder
 import coil.disk.DiskCache
+import coil.imageLoader
 import coil.intercept.Interceptor
 import coil.memory.MemoryCache
 import coil.request.ImageResult
+import coil.request.SuccessResult
 import com.jk.mediaplayer.data.AudioAlbumArtCache
 import com.jk.mediaplayer.data.OnlineMetadataFetcher
 import com.jk.mediaplayer.data.VideoThumbnailCache
@@ -29,6 +33,21 @@ class AudioAlbumArtInterceptor(private val context: Context) : Interceptor {
     override suspend fun intercept(chain: Interceptor.Chain): ImageResult {
         val request = chain.request
         val data = request.data
+
+        if (data is AudioItem || data is AlbumItem) {
+            val cacheKey = request.memoryCacheKey
+            if (request.memoryCachePolicy.readEnabled && cacheKey != null) {
+                val cached = context.imageLoader.memoryCache?.get(cacheKey)
+                if (cached != null) {
+                    return SuccessResult(
+                        drawable = BitmapDrawable(context.resources, cached.bitmap),
+                        request = request,
+                        dataSource = DataSource.MEMORY_CACHE,
+                        memoryCacheKey = cacheKey
+                    )
+                }
+            }
+        }
 
         if (data is AudioItem) {
             // Coil 2 runs interceptors on Main.immediate by default, before the memory cache, so
