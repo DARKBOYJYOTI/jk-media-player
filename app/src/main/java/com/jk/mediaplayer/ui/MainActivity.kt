@@ -241,6 +241,13 @@ class MainActivity : ComponentActivity() {
                 mutableStateOf(!prefsManager.isMusicOnboardingCompleted())
             }
             var dismissedPermissionModal by remember { mutableStateOf(false) }
+            var availableUpdate by remember { mutableStateOf<AppUpdateInfo?>(null) }
+
+            LaunchedEffect(showOnboarding, hasStoragePermission) {
+                if (!showOnboarding && hasStoragePermission && !prefsManager.isUpdateSnoozed()) {
+                    availableUpdate = AppUpdateChecker.checkForUpdateIfNeeded()
+                }
+            }
 
             JKMediaPlayerTheme(isDark = isDark, accentColor = MusicRed) {
                 if (showOnboarding) {
