@@ -344,6 +344,7 @@ class LibVlcController(
         if (isVideoFlow) {
             primaryOptions.addAll(
                 listOf(
+                    "--no-video-title-show",   // Prevents freetype/Fontconfig init on frame 1 when subtitles are off
                     "--sub-text-scale=100",    // Crisp high-resolution subtitles
                     "--subsdec-encoding=UTF-8",// Universal UTF-8 subtitle decoding (prevents boxes/tofu on non-English scripts)
                     subtitleMarginOption(),    // Density-aware bottom margin keeps cues clear of the seek bar
@@ -368,6 +369,7 @@ class LibVlcController(
             "--file-caching=$localFileCachingMs"
         ).apply {
             if (isVideoFlow) {
+                add("--no-video-title-show")
                 add("--subsdec-encoding=UTF-8")
                 add("--sub-margin=50")
             }
@@ -549,6 +551,53 @@ class LibVlcController(
                 if (curTime > 0L) {
                     player.time = curTime
                 }
+            }
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun reattachAfterSurfaceRecreate(vlcVideoLayout: VLCVideoLayout) {
+        val player = mediaPlayer ?: return
+        try {
+            attachedLayout = vlcVideoLayout
+            val vout = player.vlcVout
+            if (vout.areViewsAttached()) {
+                vout.detachViews()
+            }
+            player.attachViews(vlcVideoLayout, null, true, false)
+            val w = vlcVideoLayout.width
+            val h = vlcVideoLayout.height
+            if (w > 0 && h > 0) {
+                player.vlcVout.setWindowSize(w, h)
+            }
+            player.setVideoTrackEnabled(true)
+            applyResizeMode()
+            vlcVideoLayout.requestLayout()
+
+            val curTime = player.time.takeIf { it > 0L } ?: _currentTime.value
+            val wasPlaying = _isPlaying.value
+            if (wasPlaying) {
+                if (curTime > 0L) {
+                    player.time = curTime
+                }
+            } else if (player.media != null) {
+                // When paused during PiP restore, briefly decode a single keyframe onto the new
+                // SurfaceView and immediately re-pause so the user sees a crisp fullscreen frame
+                // rather than a black surface.
+                val savedVol = player.volume
+                player.volume = 0
+                player.play()
+                if (curTime > 0L) {
+                    player.time = curTime
+                }
+                vlcVideoLayout.postDelayed({
+                    try {
+                        player.pause()
+                        _isPlaying.value = false
+                        if (savedVol >= 0) player.volume = savedVol
+                        applyResizeMode()
+                    } catch (_: Throwable) {}
+                }, 140L)
             }
         } catch (_: Throwable) {
         }

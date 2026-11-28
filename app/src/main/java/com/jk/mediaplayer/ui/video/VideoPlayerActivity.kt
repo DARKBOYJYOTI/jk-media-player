@@ -476,6 +476,8 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
+    private var pipSurfaceKey by mutableIntStateOf(0)
+
     @Suppress("OVERRIDE_DEPRECATION")
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
@@ -487,29 +489,17 @@ class VideoPlayerActivity : ComponentActivity() {
             } else {
                 hideSystemUI()
                 libVlcController.syncVideoSurfaceBounds()
-                // Wait for the OEM PiP-to-fullscreen window resize animation to settle, then
-                // sync LibVLC's SurfaceView bounds without tearing down the active MediaCodec surface.
-                window.decorView.post {
-                    if (!isFinishing && !isDestroyed && !isInPipMode) {
-                        hideSystemUI()
-                        libVlcController.syncVideoSurfaceBounds()
-                        libVlcController.refreshPausedFrame()
-                    }
-                }
+                // On RealmeUI/ColorOS and MIUI, the existing SurfaceView's SurfaceFlinger layer
+                // can remain cropped to the small PiP rect in the top-left corner even after
+                // LayoutParams are reset. Recreating the VLCVideoLayout ONCE after the PiP-to-
+                // fullscreen animation settles guarantees a fresh fullscreen SurfaceView with
+                // zero top-left stuck frames and zero black screen.
                 window.decorView.postDelayed({
                     if (!isFinishing && !isDestroyed && !isInPipMode) {
                         hideSystemUI()
-                        libVlcController.syncVideoSurfaceBounds()
-                        libVlcController.refreshPausedFrame()
+                        pipSurfaceKey++
                     }
-                }, 250L)
-                window.decorView.postDelayed({
-                    if (!isFinishing && !isDestroyed && !isInPipMode) {
-                        hideSystemUI()
-                        libVlcController.syncVideoSurfaceBounds()
-                        libVlcController.refreshPausedFrame()
-                    }
-                }, 500L)
+                }, 350L)
             }
         }
     }
@@ -693,6 +683,7 @@ class VideoPlayerActivity : ComponentActivity() {
                         hasNext = playlist.isNotEmpty() && activeIndex < playlist.size - 1,
                         hasPrevious = playlist.isNotEmpty() && activeIndex > 0,
                         isInPip = isInPipMode,
+                        pipSurfaceKey = pipSurfaceKey,
                         resumeTrigger = resumeTrigger,
                         onPlayNextVideo = { playNextVideo() },
                         onPlayPreviousVideo = { playPreviousVideo() },
@@ -1489,6 +1480,7 @@ fun GestureVideoPlayerScreen(
     hasNext: Boolean = false,
     hasPrevious: Boolean = false,
     isInPip: Boolean = false,
+    pipSurfaceKey: Int = 0,
     resumeTrigger: Int = 0,
     onPlayNextVideo: () -> Unit = {},
     onPlayPreviousVideo: () -> Unit = {},
@@ -1884,7 +1876,9 @@ fun GestureVideoPlayerScreen(
             .background(Color.Black)
             .clipToBounds()
     ) {
-        // LibVLC Native Video Surface
+        // LibVLC Native Video Surface — keyed on pipSurfaceKey so exiting PiP cleanly replaces
+        // any OEM-cropped SurfaceView (RealmeUI/ColorOS, MIUI) with a fresh fullscreen surface.
+        key(pipSurfaceKey) {
         AndroidView(
             factory = { ctx ->
                 VLCVideoLayout(ctx).apply {
@@ -1894,7 +1888,10 @@ fun GestureVideoPlayerScreen(
                     )
                     fitsSystemWindows = false
                     videoSurfaceLayout = this
-                    controller.attachVideoLayout(this)
+                    val isPipRecreate = (ctx as? VideoPlayerActivity)?.hasInitiatedPlayback == true
+                    if (!isPipRecreate) {
+                        controller.attachVideoLayout(this)
+                    }
                     addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
                         val newW = right - left
                         val newH = bottom - top
@@ -1905,33 +1902,41 @@ fun GestureVideoPlayerScreen(
                         }
                     }
 
-                    val startPlaybackOnce = {
-                        val act = ctx as? VideoPlayerActivity
-                        if (act?.hasInitiatedPlayback != true) {
-                            act?.hasInitiatedPlayback = true
-                            if (videoPath.isNotEmpty() || videoUriString.isNotEmpty()) {
-                                val uri = if (videoUriString.isNotEmpty()) Uri.parse(videoUriString) else null
-                                controller.playMedia(videoPath, uri, resumePos, streamUser, streamPass)
-                            } else {
-                                val msg = if ((ctx as? Activity)?.intent?.action == Intent.ACTION_SEND) {
-                                    "Invalid media link or unsupported shared content."
+                    var handledSurfaceReady = false
+                    val onSurfaceReady = {
+                        if (!handledSurfaceReady) {
+                            handledSurfaceReady = true
+                            val act = ctx as? VideoPlayerActivity
+                            if (act?.hasInitiatedPlayback != true) {
+                                act?.hasInitiatedPlayback = true
+                                if (videoPath.isNotEmpty() || videoUriString.isNotEmpty()) {
+                                    val uri = if (videoUriString.isNotEmpty()) Uri.parse(videoUriString) else null
+                                    controller.playMedia(videoPath, uri, resumePos, streamUser, streamPass)
                                 } else {
-                                    "No video file or stream URL provided to play."
+                                    val msg = if ((ctx as? Activity)?.intent?.action == Intent.ACTION_SEND) {
+                                        "Invalid media link or unsupported shared content."
+                                    } else {
+                                        "No video file or stream URL provided to play."
+                                    }
+                                    controller.reportError(msg)
                                 }
-                                controller.reportError(msg)
+                            } else {
+                                // PiP-to-fullscreen recreation: attach onto the fresh fullscreen
+                                // SurfaceView and resync to the nearest keyframe.
+                                controller.reattachAfterSurfaceRecreate(this)
                             }
                         }
                     }
 
                     // Wait for the SurfaceView's native Surface to be created before starting
-                    // playback so MediaCodec binds immediately and audio never races ahead of video.
+                    // or reattaching playback so MediaCodec binds immediately at fullscreen bounds.
                     val surfaceView = findViewById<android.view.SurfaceView>(org.videolan.R.id.surface_video)
                     val holder = surfaceView?.holder
                     if (holder != null && holder.surface?.isValid != true) {
                         val callback = object : android.view.SurfaceHolder.Callback {
                             override fun surfaceCreated(h: android.view.SurfaceHolder) {
                                 h.removeCallback(this)
-                                post { startPlaybackOnce() }
+                                post { onSurfaceReady() }
                             }
                             override fun surfaceChanged(h: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {}
                             override fun surfaceDestroyed(h: android.view.SurfaceHolder) {}
@@ -1939,10 +1944,10 @@ fun GestureVideoPlayerScreen(
                         holder.addCallback(callback)
                         postDelayed({
                             holder.removeCallback(callback)
-                            startPlaybackOnce()
+                            onSurfaceReady()
                         }, 250L)
                     } else {
-                        post { startPlaybackOnce() }
+                        post { onSurfaceReady() }
                     }
                 }
             },
@@ -1954,6 +1959,7 @@ fun GestureVideoPlayerScreen(
                 .fillMaxSize()
                 .onSizeChanged { videoContainerSize = it }
         )
+        }
 
         // Stretch, crop and the pinch zoom are a transform of the picture view alone.
         //
