@@ -12,11 +12,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/darkboyjyoti/jk-media-player/releases"><img src="https://img.shields.io/badge/Release-APK-FA2D48?style=flat-square&logo=android" alt="Download APK" /></a>
+  <a href="https://github.com/darkboyjyoti/jk-media-player/releases/latest"><img src="https://img.shields.io/badge/Release-v1.1.0-FA2D48?style=flat-square&logo=android" alt="Download APK" /></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-GPLv3-536DFE?style=flat-square" alt="License: GPLv3" /></a>
-  <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/Kotlin-2.0.21-7F52FF?style=flat-square&logo=kotlin" alt="Kotlin" /></a>
+  <a href="https://kotlinlang.org"><img src="https://img.shields.io/badge/Kotlin-2.2.10-7F52FF?style=flat-square&logo=kotlin" alt="Kotlin" /></a>
   <a href="https://developer.android.com/jetpack/compose"><img src="https://img.shields.io/badge/UI-Jetpack%20Compose-4285F4?style=flat-square&logo=jetpackcompose" alt="Jetpack Compose" /></a>
-  <a href="https://www.videolan.org/vlc/download-android.html"><img src="https://img.shields.io/badge/Core-LibVLC%203.6.5-FF8800?style=flat-square&logo=vlcmediaplayer" alt="LibVLC" /></a>
+  <a href="https://www.videolan.org/vlc/download-android.html"><img src="https://img.shields.io/badge/Core-LibVLC%203.7.8-FF8800?style=flat-square&logo=vlcmediaplayer" alt="LibVLC" /></a>
 </p>
 
 ---
@@ -53,16 +53,18 @@ Both launchers share the same underlying audio service, playback queue, and loca
 * **Built-in Ringtone Maker**: Fast audio trimmer with milliseconds precision that outputs clean `.mp3` files directly to your system ringtone library.
 
 ### 🎬 Video Experience
-* **Universal Codec Decoding**: Powered by LibVLC for smooth playback of MKV, MP4, AVI, FLV, WMV, MOV, TS, WebM, and more.
-* **Hardware Acceleration**: Full support for MediaCodec hardware decoding with automatic software fallback.
+* **Universal Codec Decoding**: Powered by LibVLC 3.7.8 for smooth playback of MKV, MP4, AVI, FLV, WMV, MOV, TS, WebM, and more.
+* **Hardware Acceleration**: Full support for MediaCodec hardware decoding with automatic software fallback and live HW/SW mode sync.
 * **Intuitive Gestures**:
   - Left edge swipe: Screen brightness.
   - Right edge swipe: Media volume (0–100%) and LibVLC software preamp boost (101–200%).
   - Horizontal swipe: Scrubbing with high-precision time preview.
   - Double tap: ±10s seeking.
-* **Aspect Ratio Modes**: One-tap toggling between Fit, Stretch, and Zoom (crop to fill).
-* **Subtitle & Audio Switcher**: Load embedded subtitle streams or pick external `.srt` / `.vtt` files.
-* **Picture Profiles**: Standard, Vivid HDR, AMOLED Cinema, and Eye Care (night blue-light reduction) filters.
+* **Aspect Ratio & Zoom**: One-tap toggling between Fit, Stretch, and Cropped plus smooth pinch-to-zoom while keeping subtitles anchored on screen.
+* **Multi-Script Subtitles & Audio**: Load embedded `.ass` / `.ssa` / `.srt` tracks (including Hindi/Devanagari, Bengali, Arabic, CJK via Fontconfig with non-blocking background font caching) or pick external `.srt` / `.vtt` files.
+* **Picture-in-Picture & Background Audio**: Seamless PiP with optional Auto-PiP toggle in Settings, plus background audio playback with system media controls.
+* **Picture Profiles**: Native LibVLC Standard, Vivid, and Cinema color profiles with automatic software pipeline handoff.
+* **Quick Action Menus & Onboarding**: Long-press bottom action sheets across folders, videos, and search, guided onboarding with Music/Video blacklisting, and a daily GitHub Releases update checker.
 * **Media Info Dialog**: Instant on-device hardware specs showing container, video/audio codecs, resolution, bitrate, and frame rate without network calls.
 
 ---
@@ -71,12 +73,13 @@ Both launchers share the same underlying audio service, playback queue, and loca
 
 | Component | Technology |
 | :--- | :--- |
-| **Language** | Kotlin 2.0.21 |
+| **Language** | Kotlin 2.2.10 |
 | **UI Framework** | Jetpack Compose (BOM 2024.10.00) + Material 3 |
-| **Media Core** | LibVLC Android NDK (`org.videolan.android:libvlc-all:3.6.5`) |
+| **Media Core** | LibVLC Android NDK (`org.videolan.android:libvlc-all:3.7.8`) |
+| **Build Toolchain** | Android Gradle Plugin 8.10.1 / Gradle 8.11.1 |
 | **Image Loading** | Coil 2.7.0 (with `VideoFrameDecoder`) |
 | **Media Service** | AndroidX Media (`MediaSessionCompat`, Foreground Playback Service) |
-| **Target SDK** | Android 15 (API 35) / Minimum SDK: Android 7.0 (API 24) |
+| **SDK Levels** | Compile SDK: Android 16 (API 36) / Target SDK: Android 15 (API 35) / Min SDK: Android 7.0 (API 24) |
 
 ---
 
@@ -85,7 +88,7 @@ Both launchers share the same underlying audio service, playback queue, and loca
 ### Prerequisites
 - Android Studio Ladybug (or newer)
 - JDK 17 or higher
-- Android SDK with Platform 35 and Build-Tools 35.0.0
+- Android SDK with Platform 36
 
 ### Build Steps
 
@@ -106,8 +109,6 @@ Both launchers share the same underlying audio service, playback queue, and loca
    ```
    The generated release APKs will be available in:
    `app/build/outputs/apk/release/`
-
----
 
 ---
 
