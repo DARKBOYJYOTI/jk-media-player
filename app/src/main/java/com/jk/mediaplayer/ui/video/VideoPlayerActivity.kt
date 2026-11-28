@@ -1973,7 +1973,7 @@ fun GestureVideoPlayerScreen(
         LaunchedEffect(surfaceResyncToken) {
             if (surfaceResyncToken > 0) {
                 showResyncMask = true
-                delay(360L)
+                kotlinx.coroutines.delay(360L)
                 showResyncMask = false
             }
         }
