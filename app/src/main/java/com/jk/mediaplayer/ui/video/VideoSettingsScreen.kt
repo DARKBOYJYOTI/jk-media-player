@@ -226,7 +226,7 @@ fun VideoSettingsScreen(
                                     )
                                     Spacer(modifier = Modifier.height(3.dp))
                                     Text(
-                                        "Version 1.0.0",
+                                        "Version ${com.jk.mediaplayer.BuildConfig.VERSION_NAME}",
                                         fontSize = 11.sp,
                                         color = textSecondary
                                     )

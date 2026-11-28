@@ -220,7 +220,7 @@ private fun AboutPageContent(
                         modifier = Modifier.padding(vertical = 2.dp)
                     ) {
                         Text(
-                            text = "v1.0.0",
+                            text = "v${com.jk.mediaplayer.BuildConfig.VERSION_NAME}",
                             color = accentColor,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold,
@@ -399,7 +399,7 @@ private fun TosPageContent(
                 )
                 Spacer(Modifier.height(4.dp))
                 Text(
-                    text = "Last Revised: November 2026 • Effective Version 1.0.0",
+                    text = "Last Revised: November 2026 • Effective Version ${com.jk.mediaplayer.BuildConfig.VERSION_NAME}",
                     fontSize = 13.sp,
                     color = accentColor,
                     fontWeight = FontWeight.Medium
