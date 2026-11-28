@@ -109,7 +109,7 @@ import com.jk.mediaplayer.player.LibVlcController
 import com.jk.mediaplayer.ui.theme.JKMediaPlayerTheme
 import com.jk.mediaplayer.ui.theme.TABULAR_FIGURES
 import com.jk.mediaplayer.ui.theme.VideoIndigo
-import org.videolan.libvlc.util.VLCVideoLayout
+import com.jk.mediaplayer.player.VideoSurfaceContainer
 import java.util.Locale
 import kotlin.math.abs
 import kotlin.math.hypot
@@ -426,20 +426,24 @@ class VideoPlayerActivity : ComponentActivity() {
     var isInPipMode by mutableStateOf(false)
     private var resumeTrigger by mutableIntStateOf(0)
 
+    internal var videoSourceRect: android.graphics.Rect? = null
+
     fun enterPipMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
                 val track = libVlcController.mediaPlayer?.currentVideoTrack
-                val w = track?.width?.takeIf { it > 0 } ?: 16
-                val h = track?.height?.takeIf { it > 0 } ?: 9
+                val w = track?.width?.takeIf { it > 0 } ?: libVlcController.videoSize.value.first.takeIf { it > 0 } ?: 16
+                val h = track?.height?.takeIf { it > 0 } ?: libVlcController.videoSize.value.second.takeIf { it > 0 } ?: 9
                 val aspect = w.toFloat() / h.toFloat()
                 val rational = if (aspect in 0.42f..2.38f) Rational(w, h) else Rational(16, 9)
                 val builder = PictureInPictureParams.Builder()
                     .setAspectRatio(rational)
                     .setActions(buildPipActions())
+                videoSourceRect?.takeIf { !it.isEmpty }?.let { builder.setSourceRectHint(it) }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     val autoPip = if (::prefsManager.isInitialized) prefsManager.isAutoPipEnabled() else false
                     builder.setAutoEnterEnabled(autoPip)
+                    builder.setSeamlessResizeEnabled(true)
                 }
                 enterPictureInPictureMode(builder.build())
             } catch (_: Exception) {
@@ -455,16 +459,18 @@ class VideoPlayerActivity : ComponentActivity() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             try {
                 val track = libVlcController.mediaPlayer?.currentVideoTrack
-                val w = track?.width?.takeIf { it > 0 } ?: 16
-                val h = track?.height?.takeIf { it > 0 } ?: 9
+                val w = track?.width?.takeIf { it > 0 } ?: libVlcController.videoSize.value.first.takeIf { it > 0 } ?: 16
+                val h = track?.height?.takeIf { it > 0 } ?: libVlcController.videoSize.value.second.takeIf { it > 0 } ?: 9
                 val aspect = w.toFloat() / h.toFloat()
                 val rational = if (aspect in 0.42f..2.38f) Rational(w, h) else Rational(16, 9)
                 val builder = PictureInPictureParams.Builder()
                     .setAspectRatio(rational)
                     .setActions(buildPipActions())
+                videoSourceRect?.takeIf { !it.isEmpty }?.let { builder.setSourceRectHint(it) }
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
                     val autoPip = if (::prefsManager.isInitialized) prefsManager.isAutoPipEnabled() else false
                     builder.setAutoEnterEnabled(autoPip)
+                    builder.setSeamlessResizeEnabled(true)
                 }
                 setPictureInPictureParams(builder.build())
             } catch (_: Exception) {}
@@ -479,7 +485,6 @@ class VideoPlayerActivity : ComponentActivity() {
         }
     }
 
-    private var pipSurfaceKey by mutableIntStateOf(0)
     private var surfaceResyncToken by mutableIntStateOf(0)
 
     @Suppress("OVERRIDE_DEPRECATION")
@@ -493,19 +498,15 @@ class VideoPlayerActivity : ComponentActivity() {
             } else {
                 hideSystemUI()
                 updatePipParams()
+                // Direct VideoSurfaceContainer + vlcVout resizes smoothly with SurfaceFlinger
+                // without ever tearing down the MediaCodec surface or showing a black screen.
                 libVlcController.syncVideoSurfaceBounds()
-                // On RealmeUI/ColorOS and MIUI, the existing SurfaceView's SurfaceFlinger layer
-                // can remain cropped to the small PiP rect in the top-left corner even after
-                // LayoutParams are reset. Flush the video decoder cleanly first, then recreate
-                // the VLCVideoLayout ONCE after the PiP-to-fullscreen animation settles.
-                window.decorView.postDelayed({
+                window.decorView.post {
                     if (!isFinishing && !isDestroyed && !isInPipMode) {
                         hideSystemUI()
-                        surfaceResyncToken++
-                        libVlcController.prepareForSurfaceRecreate()
-                        pipSurfaceKey++
+                        libVlcController.syncVideoSurfaceBounds()
                     }
-                }, 350L)
+                }
             }
         }
     }
@@ -689,7 +690,6 @@ class VideoPlayerActivity : ComponentActivity() {
                         hasNext = playlist.isNotEmpty() && activeIndex < playlist.size - 1,
                         hasPrevious = playlist.isNotEmpty() && activeIndex > 0,
                         isInPip = isInPipMode,
-                        pipSurfaceKey = pipSurfaceKey,
                         surfaceResyncToken = surfaceResyncToken,
                         resumeTrigger = resumeTrigger,
                         onPlayNextVideo = { playNextVideo() },
@@ -1482,7 +1482,6 @@ fun GestureVideoPlayerScreen(
     hasNext: Boolean = false,
     hasPrevious: Boolean = false,
     isInPip: Boolean = false,
-    pipSurfaceKey: Int = 0,
     surfaceResyncToken: Int = 0,
     resumeTrigger: Int = 0,
     onPlayNextVideo: () -> Unit = {},
@@ -1588,7 +1587,7 @@ fun GestureVideoPlayerScreen(
     var isPinchGesturing by remember { mutableStateOf(false) }
     // The video output views. Stretch, crop and pinch transform the picture view only, so the cue
     // keeps its own size and position on the library's separate subtitle surface.
-    var videoSurfaceLayout by remember { mutableStateOf<VLCVideoLayout?>(null) }
+    var videoSurfaceLayout by remember { mutableStateOf<VideoSurfaceContainer?>(null) }
     var videoContainerSize by remember { mutableStateOf(IntSize.Zero) }
     val animatedZoomScale by animateFloatAsState(
         targetValue = zoomScale,
@@ -1879,29 +1878,34 @@ fun GestureVideoPlayerScreen(
             .background(Color.Black)
             .clipToBounds()
     ) {
-        // LibVLC Native Video Surface — keyed on pipSurfaceKey so exiting PiP cleanly replaces
-        // any OEM-cropped SurfaceView (RealmeUI/ColorOS, MIUI) with a fresh fullscreen surface.
-        key(pipSurfaceKey) {
+        // Direct LibVLC vout container (bypasses VideoHelper.java so PiP enter/exit scales
+        // smoothly via SurfaceFlinger with zero SurfaceView teardown, zero black screen, and
+        // zero top-left stuck crop on RealmeUI/ColorOS and MIUI).
         AndroidView(
             factory = { ctx ->
-                VLCVideoLayout(ctx).apply {
+                VideoSurfaceContainer(ctx).apply {
                     layoutParams = android.view.ViewGroup.LayoutParams(
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT,
                         android.view.ViewGroup.LayoutParams.MATCH_PARENT
                     )
                     fitsSystemWindows = false
                     videoSurfaceLayout = this
-                    val isPipRecreate = (ctx as? VideoPlayerActivity)?.hasInitiatedPlayback == true
-                    if (!isPipRecreate) {
-                        controller.attachVideoLayout(this)
-                    }
-                    addOnLayoutChangeListener { _, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
+                    controller.attachVideoLayout(this)
+                    addOnLayoutChangeListener { view, left, top, right, bottom, oldLeft, oldTop, oldRight, oldBottom ->
                         val newW = right - left
                         val newH = bottom - top
                         val oldW = oldRight - oldLeft
                         val oldH = oldBottom - oldTop
                         if (newW > 0 && newH > 0 && (newW != oldW || newH != oldH)) {
                             controller.updateVideoWindowSize(newW, newH)
+                            val act = ctx as? VideoPlayerActivity
+                            if (act != null && !act.isInPipMode) {
+                                val rect = android.graphics.Rect()
+                                if (view.getGlobalVisibleRect(rect) && !rect.isEmpty) {
+                                    act.videoSourceRect = rect
+                                    act.updatePipParams()
+                                }
+                            }
                         }
                     }
 
@@ -1923,20 +1927,14 @@ fun GestureVideoPlayerScreen(
                                     }
                                     controller.reportError(msg)
                                 }
-                            } else {
-                                // PiP-to-fullscreen recreation: attach onto the fresh fullscreen
-                                // SurfaceView and resync to the nearest keyframe.
-                                videoSurfaceLayout = this
-                                controller.reattachAfterSurfaceRecreate(this)
                             }
                         }
                     }
 
                     // Wait for the SurfaceView's native Surface to be created before starting
-                    // or reattaching playback so MediaCodec binds immediately at fullscreen bounds.
-                    val surfaceView = findViewById<android.view.SurfaceView>(org.videolan.R.id.surface_video)
-                    val holder = surfaceView?.holder
-                    if (holder != null && holder.surface?.isValid != true) {
+                    // playback so MediaCodec binds immediately and audio never races ahead of video.
+                    val holder = videoSurface.holder
+                    if (holder.surface?.isValid != true) {
                         val callback = object : android.view.SurfaceHolder.Callback {
                             override fun surfaceCreated(h: android.view.SurfaceHolder) {
                                 h.removeCallback(this)
@@ -1965,10 +1963,9 @@ fun GestureVideoPlayerScreen(
                 .fillMaxSize()
                 .onSizeChanged { videoContainerSize = it }
         )
-        }
 
-        // Brief visual veil during PiP/Background surface re-attach so MediaCodec's initial
-        // IDR keyframe warmup never exposes raw gray P-frames to the viewer.
+        // Brief visual veil only when returning from detached Background Audio mode so
+        // MediaCodec's initial IDR keyframe warmup never exposes raw gray P-frames.
         var showResyncMask by remember { mutableStateOf(false) }
         LaunchedEffect(surfaceResyncToken) {
             if (surfaceResyncToken > 0) {
@@ -1986,27 +1983,18 @@ fun GestureVideoPlayerScreen(
             Box(modifier = Modifier.fillMaxSize().background(Color.Black))
         }
 
-        // Stretch, crop and the pinch zoom are a transform of the picture view alone.
-        //
-        // LibVLC's Android video output ignores runtime zoom and fill changes (its Control() answers
-        // VLC_SUCCESS for VOUT_DISPLAY_CHANGE_ZOOM and applies nothing), so a crop cannot be asked
-        // of the engine. The picture view is scaled here instead, while the cue lives on the
-        // library's own subtitle surface next to it: the frame stretches or crops, the text keeps
-        // its size and stays fully on screen, exactly like a dedicated player does it.
+        // Stretch, crop and the pinch zoom are a transform of the picture SurfaceView alone,
+        // while the separate subtitle SurfaceView stays strictly unscaled and inside screen bounds.
         val pictureAspect = if (videoContainerSize.height > 0) {
             videoContainerSize.width.toFloat() / videoContainerSize.height
         } else {
             16f / 9f
         }
-        // The size flow can lag or return 0 on some multi-track MKV containers, so fall back to
-        // the stream track query, then the fitted surface_video bounds, and finally 16:9 (never
-        // pictureAspect, which would make Fit / Stretch / Cropped all collapse to 1:1).
         val sourceWidth = if (videoSize.first > 0) videoSize.first else controller.getVideoWidth()
         val sourceHeight = if (videoSize.second > 0) videoSize.second else controller.getVideoHeight()
         val surfaceViewBounds = videoSurfaceLayout?.let { layout ->
-            val v: android.view.View? = layout.findViewById<android.view.View>(org.videolan.R.id.surface_video)
-                ?: layout.findViewById(org.videolan.R.id.texture_video)
-            if (v != null && v.width > 0 && v.height > 0 &&
+            val v = layout.videoSurface
+            if (v.width > 0 && v.height > 0 &&
                 (v.width != videoContainerSize.width || v.height != videoContainerSize.height)
             ) {
                 v.width to v.height
@@ -2030,30 +2018,23 @@ fun GestureVideoPlayerScreen(
             }
             else -> 1f to 1f
         }
-        val pictureScaleX = baseScale.first * animatedZoomScale
-        val pictureScaleY = baseScale.second * animatedZoomScale
-        val picturePanX = panOffsetX
-        val picturePanY = panOffsetY
+        val pictureScaleX = if (isInPip) 1f else baseScale.first * animatedZoomScale
+        val pictureScaleY = if (isInPip) 1f else baseScale.second * animatedZoomScale
+        val picturePanX = if (isInPip) 0f else panOffsetX
+        val picturePanY = if (isInPip) 0f else panOffsetY
         SideEffect {
             val layout = videoSurfaceLayout ?: return@SideEffect
-            // Only the picture view is touched. Scaling a parent container would carry the cue
-            // surface along and crop the text with the frame.
-            val picture: android.view.View? = layout.findViewById<android.view.View>(org.videolan.R.id.surface_video)
-                ?: layout.findViewById(org.videolan.R.id.texture_video)
-            if (picture != null) {
-                picture.scaleX = pictureScaleX
-                picture.scaleY = pictureScaleY
-                picture.translationX = picturePanX
-                picture.translationY = picturePanY
-            }
-            // Keep LibVLC's dedicated subtitle surface strictly unscaled and inside viewport bounds.
-            val subtitlesView = layout.findViewById<android.view.View>(org.videolan.R.id.surface_subtitles)
-            if (subtitlesView != null) {
-                subtitlesView.scaleX = 1f
-                subtitlesView.scaleY = 1f
-                subtitlesView.translationX = 0f
-                subtitlesView.translationY = 0f
-            }
+            // Only the picture SurfaceView is transformed; subtitleSurface stays anchored 1:1.
+            val picture = layout.videoSurface
+            picture.scaleX = pictureScaleX
+            picture.scaleY = pictureScaleY
+            picture.translationX = picturePanX
+            picture.translationY = picturePanY
+            val subtitlesView = layout.subtitleSurface
+            subtitlesView.scaleX = 1f
+            subtitlesView.scaleY = 1f
+            subtitlesView.translationX = 0f
+            subtitlesView.translationY = 0f
         }
 
         // Picture profiles (Vivid / Cinema / Natural) are applied natively by LibVLC's

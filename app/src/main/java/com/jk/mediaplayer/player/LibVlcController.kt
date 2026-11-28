@@ -7,7 +7,7 @@ import com.jk.mediaplayer.data.PreferencesManager
 import org.videolan.libvlc.LibVLC
 import org.videolan.libvlc.Media
 import org.videolan.libvlc.MediaPlayer
-import org.videolan.libvlc.util.VLCVideoLayout
+import org.videolan.libvlc.interfaces.IVLCVout
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -416,47 +416,76 @@ class LibVlcController(
         }
     }
 
-    private var attachedLayout: VLCVideoLayout? = null
+    private var attachedLayout: VideoSurfaceContainer? = null
     var currentResizeMode: ResizeMode = ResizeMode.ORIGINAL
     var currentDisplayWidth: Int = 0
     var currentDisplayHeight: Int = 0
 
-    fun attachVideoLayout(vlcVideoLayout: VLCVideoLayout) {
-        val vout = mediaPlayer?.vlcVout
-        if (attachedLayout == vlcVideoLayout && vout != null && vout.areViewsAttached()) {
-            mediaPlayer?.setVideoTrackEnabled(true)
-            applyResizeMode()
-            return
-        }
-        attachedLayout = vlcVideoLayout
-        try {
-            if (vout != null && vout.areViewsAttached()) {
-                vout.detachViews()
-            }
-            // useTextureView=false selects the supported LibVLC Android layout: a SurfaceView for
-            // the picture and the library's own subtitle SurfaceView next to it. The texture path
-            // is served by the OpenGL vout, which owns both planes, so a resize of the picture
-            // drags the cue with it and the native zoom/aspect controls are ignored. The surface
-            // path keeps the cue on its own window, and stretch/crop/zoom stay picture-only.
-            mediaPlayer?.attachViews(vlcVideoLayout, null, true, false)
-            mediaPlayer?.setVideoTrackEnabled(true)
-            applyResizeMode()
-        } catch (e: Throwable) {
+    private val videoLayoutListener = IVLCVout.OnNewVideoLayoutListener { _, width, height, visibleWidth, visibleHeight, sarNum, sarDen ->
+        val w = if (visibleWidth > 0) visibleWidth else width
+        val h = if (visibleHeight > 0) visibleHeight else height
+        if (w > 0 && h > 0) {
+            val safeNum = if (sarNum > 0) sarNum else 1
+            val safeDen = if (sarDen > 0) sarDen else 1
+            val displayW = if (safeNum != safeDen) (w * safeNum) / safeDen else w
+            _videoSize.value = Pair(displayW, h)
+            attachedLayout?.setVideoDimensions(w, h, safeNum, safeDen)
         }
     }
 
-    fun detachVideoLayout(onlyIfLayout: VLCVideoLayout? = null) {
+    private fun bindContainerToVout(container: VideoSurfaceContainer, player: MediaPlayer) {
+        val vout = player.vlcVout
+        container.onBoundsUpdated = { fitW, fitH ->
+            try {
+                if (vout.areViewsAttached() && fitW > 0 && fitH > 0) {
+                    vout.setWindowSize(fitW, fitH)
+                }
+            } catch (_: Throwable) {}
+        }
+        vout.setVideoView(container.videoSurface)
+        vout.setSubtitlesView(container.subtitleSurface)
+        vout.attachViews(videoLayoutListener)
+        val curSize = _videoSize.value
+        if (curSize.first > 0 && curSize.second > 0) {
+            container.setVideoDimensions(curSize.first, curSize.second)
+        }
+        container.applyFittedLayout()
+    }
+
+    fun attachVideoLayout(container: VideoSurfaceContainer) {
+        val player = mediaPlayer ?: return
+        val vout = player.vlcVout
+        if (attachedLayout === container && vout.areViewsAttached()) {
+            player.setVideoTrackEnabled(true)
+            container.applyFittedLayout()
+            applyResizeMode()
+            return
+        }
+        attachedLayout = container
+        try {
+            if (vout.areViewsAttached()) {
+                vout.detachViews()
+            }
+            bindContainerToVout(container, player)
+            player.setVideoTrackEnabled(true)
+            applyResizeMode()
+        } catch (_: Throwable) {
+        }
+    }
+
+    fun detachVideoLayout(onlyIfLayout: VideoSurfaceContainer? = null) {
         if (onlyIfLayout != null && attachedLayout !== onlyIfLayout) {
             return
         }
         try {
+            attachedLayout?.onBoundsUpdated = null
             val vout = mediaPlayer?.vlcVout
             if (vout != null && vout.areViewsAttached()) {
                 vout.detachViews()
             } else {
                 mediaPlayer?.detachViews()
             }
-        } catch (e: Throwable) {
+        } catch (_: Throwable) {
         }
     }
 
@@ -467,16 +496,12 @@ class LibVlcController(
         try {
             val wasDetached = !vout.areViewsAttached()
             if (wasDetached) {
-                player.attachViews(layout, null, true, false)
-            }
-            val w = layout.width
-            val h = layout.height
-            if (w > 0 && h > 0) {
-                player.vlcVout.setWindowSize(w, h)
+                bindContainerToVout(layout, player)
+            } else {
+                layout.applyFittedLayout()
             }
             player.setVideoTrackEnabled(true)
             applyResizeMode()
-            layout.requestLayout()
             // Re-attaching a surface mid-GOP (e.g. returning from background audio) makes hardware
             // decoders paint gray P/B-frames until the next natural I-frame arrives. A micro-seek
             // to the current timestamp snaps the demuxer to the nearest keyframe immediately.
@@ -486,135 +511,47 @@ class LibVlcController(
                     player.time = curTime
                 }
             }
-        } catch (e: Throwable) {
+        } catch (_: Throwable) {
         }
     }
 
-    /** Updates LibVLC's output window dimensions whenever the video container resizes (e.g. PiP exit or rotation). */
+    /** Updates LibVLC's output window dimensions whenever the video container resizes (e.g. PiP or rotation). */
     fun updateVideoWindowSize(width: Int, height: Int) {
         if (width <= 0 || height <= 0) return
-        syncVideoSurfaceBounds(explicitWidth = width, explicitHeight = height)
+        attachedLayout?.applyFittedLayout(width, height)
     }
 
     /**
-     * Resets stale PiP pixel LayoutParams locked onto player_surface_frame / surface_video by
-     * LibVLC's VideoHelper during PiP exit animations, then re-runs VideoHelper.updateVideoSurfaces()
-     * at full screen size without ever tearing down the active MediaCodec surface.
+     * Re-computes centered fitted bounds on the live SurfaceView without ever tearing down
+     * the active MediaCodec surface (zero black screen, zero gray glitch, zero top-left stuck).
      */
     fun syncVideoSurfaceBounds(explicitWidth: Int = 0, explicitHeight: Int = 0) {
         val layout = attachedLayout ?: return
         val player = mediaPlayer ?: return
         try {
             val vout = player.vlcVout
-            val wasDetached = !vout.areViewsAttached()
-            if (wasDetached) {
-                player.attachViews(layout, null, true, false)
-            }
-            val surfaceVideo: android.view.View? = layout.findViewById<android.view.View>(org.videolan.R.id.surface_video)
-                ?: layout.findViewById(org.videolan.R.id.texture_video)
-            val surfaceSubtitles: android.view.View? = layout.findViewById(org.videolan.R.id.surface_subtitles)
-            val surfaceFrame: android.view.View? = surfaceVideo?.parent as? android.view.View
-
-            fun resetToMatchParent(view: android.view.View?) {
-                val lp = view?.layoutParams ?: return
-                var changed = false
-                if (lp.width != android.view.ViewGroup.LayoutParams.MATCH_PARENT) {
-                    lp.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                    changed = true
+            if (!vout.areViewsAttached()) {
+                bindContainerToVout(layout, player)
+            } else {
+                val w = if (explicitWidth > 0) explicitWidth else layout.width
+                val h = if (explicitHeight > 0) explicitHeight else layout.height
+                if (w > 0 && h > 0) {
+                    layout.applyFittedLayout(w, h)
                 }
-                if (lp.height != android.view.ViewGroup.LayoutParams.MATCH_PARENT) {
-                    lp.height = android.view.ViewGroup.LayoutParams.MATCH_PARENT
-                    changed = true
-                }
-                if (lp is android.widget.FrameLayout.LayoutParams && lp.gravity != android.view.Gravity.CENTER) {
-                    lp.gravity = android.view.Gravity.CENTER
-                    changed = true
-                }
-                if (changed) {
-                    view.layoutParams = lp
-                }
-            }
-
-            resetToMatchParent(surfaceFrame)
-            resetToMatchParent(surfaceVideo)
-            resetToMatchParent(surfaceSubtitles)
-            (surfaceVideo as? android.view.SurfaceView)?.holder?.setSizeFromLayout()
-            (surfaceSubtitles as? android.view.SurfaceView)?.holder?.setSizeFromLayout()
-
-            val w = if (explicitWidth > 0) explicitWidth else layout.width
-            val h = if (explicitHeight > 0) explicitHeight else layout.height
-            if (w > 0 && h > 0) {
-                vout.setWindowSize(w, h)
             }
             player.setVideoTrackEnabled(true)
-            player.aspectRatio = null
-            player.scale = 0f
-            player.videoScale = MediaPlayer.ScaleType.SURFACE_BEST_FIT
-            layout.requestLayout()
-            if (wasDetached) {
-                val curTime = player.time
-                if (curTime > 0L) {
-                    player.time = curTime
-                }
-            }
+            applyResizeMode()
         } catch (_: Throwable) {
         }
     }
 
     /**
-     * Cleanly flushes and stops the active MediaCodec video decoder before a SurfaceView swap
-     * (e.g. PiP-to-fullscreen recreation) so no stale P-frame DPB macroblocks render on the new surface.
+     * Cleanly flushes and stops the active MediaCodec video decoder before detaching for
+     * background audio playback so its DPB does not smear when returning to the player.
      */
     fun prepareForSurfaceRecreate() {
         try {
             mediaPlayer?.setVideoTrackEnabled(false)
-        } catch (_: Throwable) {
-        }
-    }
-
-    fun reattachAfterSurfaceRecreate(vlcVideoLayout: VLCVideoLayout) {
-        val player = mediaPlayer ?: return
-        try {
-            attachedLayout = vlcVideoLayout
-            val vout = player.vlcVout
-            if (vout.areViewsAttached()) {
-                vout.detachViews()
-            }
-            player.attachViews(vlcVideoLayout, null, true, false)
-            val w = vlcVideoLayout.width
-            val h = vlcVideoLayout.height
-            if (w > 0 && h > 0) {
-                player.vlcVout.setWindowSize(w, h)
-            }
-            player.setVideoTrackEnabled(true)
-            applyResizeMode()
-            vlcVideoLayout.requestLayout()
-
-            val curTime = player.time.takeIf { it > 0L } ?: _currentTime.value
-            val wasPlaying = _isPlaying.value
-            if (wasPlaying) {
-                if (curTime > 0L) {
-                    player.time = curTime
-                }
-            } else if (player.media != null) {
-                // When paused during PiP restore, briefly decode a single keyframe onto the new
-                // SurfaceView and immediately re-pause so the user sees a crisp fullscreen frame
-                // rather than a black surface.
-                val savedVol = player.volume
-                player.volume = 0
-                player.play()
-                if (curTime > 0L) {
-                    player.time = curTime
-                }
-                vlcVideoLayout.postDelayed({
-                    try {
-                        player.pause()
-                        _isPlaying.value = false
-                        if (savedVol >= 0) player.volume = savedVol
-                        applyResizeMode()
-                    } catch (_: Throwable) {}
-                }, 140L)
-            }
         } catch (_: Throwable) {
         }
     }
@@ -1328,6 +1265,7 @@ class LibVlcController(
                     val (w, h) = if (rot == 90 || rot == 270) rawH to rawW else rawW to rawH
                     if (_videoSize.value.first <= 0 || _videoSize.value.second <= 0) {
                         _videoSize.value = Pair(w, h)
+                        attachedLayout?.setVideoDimensions(w, h)
                     }
                 }
             } catch (_: Throwable) {
