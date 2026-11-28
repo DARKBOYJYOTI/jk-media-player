@@ -136,7 +136,7 @@ dependencies {
     implementation("androidx.media:media:1.7.0")
 
     // Universal Video & Audio Core: LibVLC
-    implementation("org.videolan.android:libvlc-all:3.6.5")
+    implementation("org.videolan.android:libvlc-all:3.7.8")
 
 
     // Audio ID3 Tag Engine (MP3, FLAC, M4A, OGG)
