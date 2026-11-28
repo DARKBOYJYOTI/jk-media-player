@@ -436,7 +436,8 @@ class VideoPlayerActivity : ComponentActivity() {
                     .setAspectRatio(rational)
                     .setActions(buildPipActions())
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-                    builder.setAutoEnterEnabled(true)
+                    val autoPip = if (::prefsManager.isInitialized) prefsManager.isAutoPipEnabled() else false
+                    builder.setAutoEnterEnabled(autoPip)
                 }
                 enterPictureInPictureMode(builder.build())
             } catch (_: Exception) {
@@ -471,7 +472,7 @@ class VideoPlayerActivity : ComponentActivity() {
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
         val autoPip = if (::prefsManager.isInitialized) prefsManager.isAutoPipEnabled() else false
-        if (autoPip && libVlcController.isPlaying.value && !isFinishing) {
+        if (autoPip && libVlcController.isPlaying.value && !isFinishing && !isBackgroundAudioRunning) {
             enterPipMode()
         }
     }
@@ -488,15 +489,16 @@ class VideoPlayerActivity : ComponentActivity() {
                 abandonAudioFocus()
             } else {
                 hideSystemUI()
+                updatePipParams()
                 libVlcController.syncVideoSurfaceBounds()
                 // On RealmeUI/ColorOS and MIUI, the existing SurfaceView's SurfaceFlinger layer
                 // can remain cropped to the small PiP rect in the top-left corner even after
-                // LayoutParams are reset. Recreating the VLCVideoLayout ONCE after the PiP-to-
-                // fullscreen animation settles guarantees a fresh fullscreen SurfaceView with
-                // zero top-left stuck frames and zero black screen.
+                // LayoutParams are reset. Flush the video decoder cleanly first, then recreate
+                // the VLCVideoLayout ONCE after the PiP-to-fullscreen animation settles.
                 window.decorView.postDelayed({
                     if (!isFinishing && !isDestroyed && !isInPipMode) {
                         hideSystemUI()
+                        libVlcController.prepareForSurfaceRecreate()
                         pipSurfaceKey++
                     }
                 }, 350L)
@@ -1002,6 +1004,7 @@ class VideoPlayerActivity : ComponentActivity() {
         activeInstance = this
         activeController = libVlcController
         hideSystemUI()
+        updatePipParams()
         val returningFromBackground = isBackgroundAudioRunning
         if (isBackgroundAudioRunning) {
             isBackgroundAudioRunning = false

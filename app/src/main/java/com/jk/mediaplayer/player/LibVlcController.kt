@@ -559,6 +559,17 @@ class LibVlcController(
         }
     }
 
+    /**
+     * Cleanly flushes and stops the active MediaCodec video decoder before a SurfaceView swap
+     * (e.g. PiP-to-fullscreen recreation) so no stale P-frame DPB macroblocks render on the new surface.
+     */
+    fun prepareForSurfaceRecreate() {
+        try {
+            mediaPlayer?.setVideoTrackEnabled(false)
+        } catch (_: Throwable) {
+        }
+    }
+
     fun reattachAfterSurfaceRecreate(vlcVideoLayout: VLCVideoLayout) {
         val player = mediaPlayer ?: return
         try {
