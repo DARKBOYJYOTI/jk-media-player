@@ -1920,7 +1920,7 @@ fun GestureVideoPlayerScreen(
         val sourceWidth = if (videoSize.first > 0) videoSize.first else controller.getVideoWidth()
         val sourceHeight = if (videoSize.second > 0) videoSize.second else controller.getVideoHeight()
         val surfaceViewBounds = videoSurfaceLayout?.let { layout ->
-            val v = layout.findViewById<android.view.View>(org.videolan.R.id.surface_video)
+            val v: android.view.View? = layout.findViewById<android.view.View>(org.videolan.R.id.surface_video)
                 ?: layout.findViewById(org.videolan.R.id.texture_video)
             if (v != null && v.width > 0 && v.height > 0 &&
                 (v.width != videoContainerSize.width || v.height != videoContainerSize.height)
@@ -1954,7 +1954,7 @@ fun GestureVideoPlayerScreen(
             val layout = videoSurfaceLayout ?: return@SideEffect
             // Only the picture view is touched. Scaling a parent container would carry the cue
             // surface along and crop the text with the frame.
-            val picture = layout.findViewById<android.view.View>(org.videolan.R.id.surface_video)
+            val picture: android.view.View? = layout.findViewById<android.view.View>(org.videolan.R.id.surface_video)
                 ?: layout.findViewById(org.videolan.R.id.texture_video)
             if (picture != null) {
                 picture.scaleX = pictureScaleX
