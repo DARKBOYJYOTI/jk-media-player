@@ -390,6 +390,8 @@ class VideoPlayerActivity : ComponentActivity() {
         activeInstance = this
         activeController = libVlcController
         foregroundMediaSession?.isActive = false
+        // Stop the video decoder cleanly before detaching so its DPB doesn't stall or smear on resume.
+        libVlcController.prepareForSurfaceRecreate()
         libVlcController.detachVideoLayout()
         VideoBackgroundService.start(this, currentTitle, videoPath, videoUriString)
         moveTaskToBack(true)
@@ -478,6 +480,7 @@ class VideoPlayerActivity : ComponentActivity() {
     }
 
     private var pipSurfaceKey by mutableIntStateOf(0)
+    private var surfaceResyncToken by mutableIntStateOf(0)
 
     @Suppress("OVERRIDE_DEPRECATION")
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
@@ -498,6 +501,7 @@ class VideoPlayerActivity : ComponentActivity() {
                 window.decorView.postDelayed({
                     if (!isFinishing && !isDestroyed && !isInPipMode) {
                         hideSystemUI()
+                        surfaceResyncToken++
                         libVlcController.prepareForSurfaceRecreate()
                         pipSurfaceKey++
                     }
@@ -686,6 +690,7 @@ class VideoPlayerActivity : ComponentActivity() {
                         hasPrevious = playlist.isNotEmpty() && activeIndex > 0,
                         isInPip = isInPipMode,
                         pipSurfaceKey = pipSurfaceKey,
+                        surfaceResyncToken = surfaceResyncToken,
                         resumeTrigger = resumeTrigger,
                         onPlayNextVideo = { playNextVideo() },
                         onPlayPreviousVideo = { playPreviousVideo() },
@@ -1013,16 +1018,10 @@ class VideoPlayerActivity : ComponentActivity() {
         foregroundMediaSession?.isActive = true
         updateForegroundPlaybackState(libVlcController.isPlaying.value)
         updateForegroundMetadata()
-        libVlcController.reattachVideoLayout(resyncKeyframe = returningFromBackground)
         if (returningFromBackground) {
-            // SurfaceHolder may finish surfaceCreated() one frame after onResume(); re-sync to
-            // the nearest keyframe once layout settles so no gray P/B-frames linger on screen.
-            window.decorView.postDelayed({
-                if (!isFinishing && !isDestroyed && !isBackgroundAudioRunning) {
-                    libVlcController.reattachVideoLayout(resyncKeyframe = true)
-                }
-            }, 120L)
+            surfaceResyncToken++
         }
+        libVlcController.reattachVideoLayout(resyncKeyframe = returningFromBackground)
         val savedB = prefsManager.getVideoBrightness()
         if (savedB >= 0f) {
             val lp = window.attributes
@@ -1484,6 +1483,7 @@ fun GestureVideoPlayerScreen(
     hasPrevious: Boolean = false,
     isInPip: Boolean = false,
     pipSurfaceKey: Int = 0,
+    surfaceResyncToken: Int = 0,
     resumeTrigger: Int = 0,
     onPlayNextVideo: () -> Unit = {},
     onPlayPreviousVideo: () -> Unit = {},
@@ -1965,6 +1965,25 @@ fun GestureVideoPlayerScreen(
                 .fillMaxSize()
                 .onSizeChanged { videoContainerSize = it }
         )
+        }
+
+        // Brief visual veil during PiP/Background surface re-attach so MediaCodec's initial
+        // IDR keyframe warmup never exposes raw gray P-frames to the viewer.
+        var showResyncMask by remember { mutableStateOf(false) }
+        LaunchedEffect(surfaceResyncToken) {
+            if (surfaceResyncToken > 0) {
+                showResyncMask = true
+                delay(360L)
+                showResyncMask = false
+            }
+        }
+        AnimatedVisibility(
+            visible = showResyncMask,
+            enter = EnterTransition.None,
+            exit = fadeOut(animationSpec = tween(220)),
+            modifier = Modifier.fillMaxSize()
+        ) {
+            Box(modifier = Modifier.fillMaxSize().background(Color.Black))
         }
 
         // Stretch, crop and the pinch zoom are a transform of the picture view alone.

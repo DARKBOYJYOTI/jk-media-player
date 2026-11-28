@@ -345,6 +345,7 @@ class LibVlcController(
             primaryOptions.addAll(
                 listOf(
                     "--no-video-title-show",   // Prevents freetype/Fontconfig init on frame 1 when subtitles are off
+                    "--no-avcodec-corrupted",  // Drop unreferenced/corrupted frames instead of showing gray macroblocks
                     "--sub-text-scale=100",    // Crisp high-resolution subtitles
                     "--subsdec-encoding=UTF-8",// Universal UTF-8 subtitle decoding (prevents boxes/tofu on non-English scripts)
                     subtitleMarginOption(),    // Density-aware bottom margin keeps cues clear of the seek bar
@@ -359,6 +360,7 @@ class LibVlcController(
         val mediaOnlyOptions = arrayOf(
             "--avcodec-hw=any",
             "--avcodec-hw=none",
+            "--no-avcodec-corrupted",
             "--network-caching=1000",
             "--audio-time-stretch",
             "--no-audio-time-stretch",
@@ -762,6 +764,10 @@ class LibVlcController(
             if (resumePositionMs > 1000L) {
                 val startSec = resumePositionMs / 1000L
                 media.addOption(":start-time=$startSec")
+                if (isVideoFlow) {
+                    // Accurate keyframe seek on resume prevents gray P-frame smearing on HTTP/MKV streams.
+                    media.addOption(":no-input-fast-seek")
+                }
                 pendingResumePositionMs = 0L
             } else {
                 pendingResumePositionMs = resumePositionMs
