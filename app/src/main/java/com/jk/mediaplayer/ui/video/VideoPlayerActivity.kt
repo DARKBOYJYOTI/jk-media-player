@@ -1923,6 +1923,7 @@ fun GestureVideoPlayerScreen(
                             } else {
                                 // PiP-to-fullscreen recreation: attach onto the fresh fullscreen
                                 // SurfaceView and resync to the nearest keyframe.
+                                videoSurfaceLayout = this
                                 controller.reattachAfterSurfaceRecreate(this)
                             }
                         }
@@ -1951,9 +1952,11 @@ fun GestureVideoPlayerScreen(
                     }
                 }
             },
-            onRelease = {
-                videoSurfaceLayout = null
-                controller.detachVideoLayout()
+            onRelease = { releasedLayout ->
+                if (videoSurfaceLayout === releasedLayout) {
+                    videoSurfaceLayout = null
+                }
+                controller.detachVideoLayout(releasedLayout)
             },
             modifier = Modifier
                 .fillMaxSize()

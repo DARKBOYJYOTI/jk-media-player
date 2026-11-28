@@ -443,7 +443,10 @@ class LibVlcController(
         }
     }
 
-    fun detachVideoLayout() {
+    fun detachVideoLayout(onlyIfLayout: VLCVideoLayout? = null) {
+        if (onlyIfLayout != null && attachedLayout !== onlyIfLayout) {
+            return
+        }
         try {
             val vout = mediaPlayer?.vlcVout
             if (vout != null && vout.areViewsAttached()) {
