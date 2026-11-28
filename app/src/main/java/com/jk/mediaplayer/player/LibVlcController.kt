@@ -454,20 +454,32 @@ class LibVlcController(
         }
     }
 
-    fun reattachVideoLayout() {
+    fun reattachVideoLayout(resyncKeyframe: Boolean = false) {
         val layout = attachedLayout ?: return
-        val vout = mediaPlayer?.vlcVout
+        val player = mediaPlayer ?: return
+        val vout = player.vlcVout
         try {
-            if (vout == null || !vout.areViewsAttached()) {
-                mediaPlayer?.attachViews(layout, null, true, false)
+            val wasDetached = !vout.areViewsAttached()
+            if (wasDetached) {
+                player.attachViews(layout, null, true, false)
             }
             val w = layout.width
             val h = layout.height
             if (w > 0 && h > 0) {
-                mediaPlayer?.vlcVout?.setWindowSize(w, h)
+                player.vlcVout.setWindowSize(w, h)
             }
-            mediaPlayer?.setVideoTrackEnabled(true)
+            player.setVideoTrackEnabled(true)
             applyResizeMode()
+            layout.requestLayout()
+            // Re-attaching a surface mid-GOP (e.g. returning from background audio) makes hardware
+            // decoders paint gray P/B-frames until the next natural I-frame arrives. A micro-seek
+            // to the current timestamp snaps the demuxer to the nearest keyframe immediately.
+            if (resyncKeyframe || wasDetached) {
+                val curTime = player.time
+                if (curTime > 0L) {
+                    player.time = curTime
+                }
+            }
         } catch (e: Throwable) {
         }
     }
@@ -481,23 +493,24 @@ class LibVlcController(
                 vout.setWindowSize(width, height)
             }
             applyResizeMode()
+            attachedLayout?.requestLayout()
         } catch (_: Throwable) {
         }
     }
 
     /**
-     * Forces a clean SurfaceView re-attach after PiP restore so OEM window transitions
-     * (e.g. MIUI/HyperOS) cannot leave the picture stuck at the small PiP size in the top-left corner.
+     * Syncs the active SurfaceView window bounds after a PiP-to-fullscreen resize animation
+     * without tearing down an already-attached MediaCodec surface (which causes a black screen).
      */
-    fun forceReattachVideoLayout() {
+    fun syncVideoSurfaceBounds() {
         val layout = attachedLayout ?: return
         val player = mediaPlayer ?: return
         try {
             val vout = player.vlcVout
-            if (vout.areViewsAttached()) {
-                vout.detachViews()
+            val wasDetached = !vout.areViewsAttached()
+            if (wasDetached) {
+                player.attachViews(layout, null, true, false)
             }
-            player.attachViews(layout, null, true, false)
             val w = layout.width
             val h = layout.height
             if (w > 0 && h > 0) {
@@ -506,6 +519,12 @@ class LibVlcController(
             player.setVideoTrackEnabled(true)
             applyResizeMode()
             layout.requestLayout()
+            if (wasDetached) {
+                val curTime = player.time
+                if (curTime > 0L) {
+                    player.time = curTime
+                }
+            }
         } catch (_: Throwable) {
         }
     }

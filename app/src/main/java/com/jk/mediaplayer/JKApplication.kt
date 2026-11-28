@@ -210,6 +210,16 @@ class JKApplication : Application(), ImageLoaderFactory {
                 prefs.clearFailedArtistImages()
                 prefs.setArtistCacheVersion(2)
             }
+            // Pre-warm LibVLC native libraries and plugin/fontconfig environment off the main
+            // thread so the first video playback after a fresh install starts immediately.
+            try {
+                val warmVlc = org.videolan.libvlc.LibVLC(
+                    this@JKApplication,
+                    arrayListOf("--no-stats", "--no-video-title-show")
+                )
+                warmVlc.release()
+            } catch (_: Throwable) {
+            }
         }
     }
 

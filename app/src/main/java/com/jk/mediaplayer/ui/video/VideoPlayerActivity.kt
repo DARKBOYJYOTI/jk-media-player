@@ -486,20 +486,20 @@ class VideoPlayerActivity : ComponentActivity() {
                 abandonAudioFocus()
             } else {
                 hideSystemUI()
-                libVlcController.reattachVideoLayout()
+                libVlcController.syncVideoSurfaceBounds()
                 // Wait for the OEM PiP-to-fullscreen window resize animation to settle, then
-                // force-sync LibVLC's SurfaceView bounds so the video never stays stuck at PiP size.
+                // sync LibVLC's SurfaceView bounds without tearing down the active MediaCodec surface.
                 window.decorView.post {
                     if (!isFinishing && !isDestroyed && !isInPipMode) {
                         hideSystemUI()
-                        libVlcController.forceReattachVideoLayout()
+                        libVlcController.syncVideoSurfaceBounds()
                         libVlcController.refreshPausedFrame()
                     }
                 }
                 window.decorView.postDelayed({
                     if (!isFinishing && !isDestroyed && !isInPipMode) {
                         hideSystemUI()
-                        libVlcController.forceReattachVideoLayout()
+                        libVlcController.syncVideoSurfaceBounds()
                         libVlcController.refreshPausedFrame()
                     }
                 }, 260L)
@@ -1004,6 +1004,7 @@ class VideoPlayerActivity : ComponentActivity() {
         activeInstance = this
         activeController = libVlcController
         hideSystemUI()
+        val returningFromBackground = isBackgroundAudioRunning
         if (isBackgroundAudioRunning) {
             isBackgroundAudioRunning = false
             VideoBackgroundService.stop(this)
@@ -1011,8 +1012,16 @@ class VideoPlayerActivity : ComponentActivity() {
         foregroundMediaSession?.isActive = true
         updateForegroundPlaybackState(libVlcController.isPlaying.value)
         updateForegroundMetadata()
-        libVlcController.reattachVideoLayout()
-        val dm = resources.displayMetrics
+        libVlcController.reattachVideoLayout(resyncKeyframe = returningFromBackground)
+        if (returningFromBackground) {
+            // SurfaceHolder may finish surfaceCreated() one frame after onResume(); re-sync to
+            // the nearest keyframe once layout settles so no gray P/B-frames linger on screen.
+            window.decorView.postDelayed({
+                if (!isFinishing && !isDestroyed && !isBackgroundAudioRunning) {
+                    libVlcController.reattachVideoLayout(resyncKeyframe = true)
+                }
+            }, 120L)
+        }
         val savedB = prefsManager.getVideoBrightness()
         if (savedB >= 0f) {
             val lp = window.attributes
@@ -1025,7 +1034,8 @@ class VideoPlayerActivity : ComponentActivity() {
         libVlcController.setResizeMode(savedMode)
         resumeTrigger++
 
-        if (wasPlayingBeforePause) {
+        val shouldPlay = if (returningFromBackground) libVlcController.isPlaying.value else wasPlayingBeforePause
+        if (shouldPlay) {
             requestAudioFocus()
             libVlcController.play()
         } else {
