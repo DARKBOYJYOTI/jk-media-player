@@ -1099,6 +1099,14 @@ fun clearMetadataCache() {
         prefs.edit().putLong("update_snoozed_until_ms", nowMs + sevenDaysMs).apply()
     }
 
+    fun getSubtitleFontCacheFingerprint(): String? {
+        return prefs.getString("subtitle_font_cache_fingerprint", null)
+    }
+
+    fun setSubtitleFontCacheFingerprint(fingerprint: String) {
+        prefs.edit().putString("subtitle_font_cache_fingerprint", fingerprint).apply()
+    }
+
 }
 
 data class PlaybackSession(

@@ -331,10 +331,9 @@ class LibVlcController(
         val audioOutputOption = "--aout=android_audiotrack"
         val stretchOption = if (isVideoFlow) "--audio-time-stretch" else "--no-audio-time-stretch"
         val hwDecodeOption = if (isVideoFlow) "--avcodec-hw=any" else "--avcodec-hw=none"
-        // Ogg Opus/Vorbis files commonly pack 1,000 ms of audio per Ogg page; a 400 ms cache
-        // starves and triggers AudioTrack resync clicks on pause/resume. 1,200 ms fits full
-        // Ogg pages with headroom for all music formats while keeping local startup instant.
-        val localFileCachingMs = if (isVideoFlow) 400 else 1200
+        // Give local video 600 ms preroll so MediaCodec's first keyframe aligns cleanly with
+        // AudioTrack's initial PTS (preventing audio starting before the picture appears).
+        val localFileCachingMs = if (isVideoFlow) 600 else 1200
         val primaryOptions = arrayListOf(
             audioOutputOption,
             hwDecodeOption,            // Software audio decoding for music avoids MediaCodec init clicks
@@ -487,22 +486,15 @@ class LibVlcController(
     /** Updates LibVLC's output window dimensions whenever the video container resizes (e.g. PiP exit or rotation). */
     fun updateVideoWindowSize(width: Int, height: Int) {
         if (width <= 0 || height <= 0) return
-        try {
-            val vout = mediaPlayer?.vlcVout ?: return
-            if (vout.areViewsAttached()) {
-                vout.setWindowSize(width, height)
-            }
-            applyResizeMode()
-            attachedLayout?.requestLayout()
-        } catch (_: Throwable) {
-        }
+        syncVideoSurfaceBounds(explicitWidth = width, explicitHeight = height)
     }
 
     /**
-     * Syncs the active SurfaceView window bounds after a PiP-to-fullscreen resize animation
-     * without tearing down an already-attached MediaCodec surface (which causes a black screen).
+     * Resets stale PiP pixel LayoutParams locked onto player_surface_frame / surface_video by
+     * LibVLC's VideoHelper during PiP exit animations, then re-runs VideoHelper.updateVideoSurfaces()
+     * at full screen size without ever tearing down the active MediaCodec surface.
      */
-    fun syncVideoSurfaceBounds() {
+    fun syncVideoSurfaceBounds(explicitWidth: Int = 0, explicitHeight: Int = 0) {
         val layout = attachedLayout ?: return
         val player = mediaPlayer ?: return
         try {
@@ -511,13 +503,46 @@ class LibVlcController(
             if (wasDetached) {
                 player.attachViews(layout, null, true, false)
             }
-            val w = layout.width
-            val h = layout.height
+            val surfaceVideo: android.view.View? = layout.findViewById<android.view.View>(org.videolan.R.id.surface_video)
+                ?: layout.findViewById(org.videolan.R.id.texture_video)
+            val surfaceSubtitles: android.view.View? = layout.findViewById(org.videolan.R.id.surface_subtitles)
+            val surfaceFrame: android.view.View? = surfaceVideo?.parent as? android.view.View
+
+            fun resetToMatchParent(view: android.view.View?) {
+                val lp = view?.layoutParams ?: return
+                var changed = false
+                if (lp.width != android.view.ViewGroup.LayoutParams.MATCH_PARENT) {
+                    lp.width = android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    changed = true
+                }
+                if (lp.height != android.view.ViewGroup.LayoutParams.MATCH_PARENT) {
+                    lp.height = android.view.ViewGroup.LayoutParams.MATCH_PARENT
+                    changed = true
+                }
+                if (lp is android.widget.FrameLayout.LayoutParams && lp.gravity != android.view.Gravity.CENTER) {
+                    lp.gravity = android.view.Gravity.CENTER
+                    changed = true
+                }
+                if (changed) {
+                    view.layoutParams = lp
+                }
+            }
+
+            resetToMatchParent(surfaceFrame)
+            resetToMatchParent(surfaceVideo)
+            resetToMatchParent(surfaceSubtitles)
+            (surfaceVideo as? android.view.SurfaceView)?.holder?.setSizeFromLayout()
+            (surfaceSubtitles as? android.view.SurfaceView)?.holder?.setSizeFromLayout()
+
+            val w = if (explicitWidth > 0) explicitWidth else layout.width
+            val h = if (explicitHeight > 0) explicitHeight else layout.height
             if (w > 0 && h > 0) {
-                player.vlcVout.setWindowSize(w, h)
+                vout.setWindowSize(w, h)
             }
             player.setVideoTrackEnabled(true)
-            applyResizeMode()
+            player.aspectRatio = null
+            player.scale = 0f
+            player.videoScale = MediaPlayer.ScaleType.SURFACE_BEST_FIT
             layout.requestLayout()
             if (wasDetached) {
                 val curTime = player.time
@@ -706,15 +731,18 @@ class LibVlcController(
                 // Ogg Opus/Vorbis files commonly pack 1,000 ms of audio per Ogg page; a 400 ms
                 // cache starves and triggers AudioTrack resync clicks on pause/resume. 1,200 ms
                 // accommodates full Ogg pages cleanly across all music formats.
-                val localFileCachingMs = if (isVideoFlow) 400 else 1200
+                val localFileCachingMs = if (isVideoFlow) 600 else 1200
                 media.addOption(":file-caching=$localFileCachingMs")
             }
             if (isVideoFlow) {
                 // Subtitles are off unless this viewer already chose a track for this playback.
+                // Passing both :sub-track=-1 and :sub-track-id=-1 prevents libass from opening
+                // during initial video start while keeping all tracks selectable on demand.
                 if (userSelectedSubtitleTrackId >= 0) {
                     media.addOption(":sub-track=$userSelectedSubtitleTrackId")
                 } else {
                     media.addOption(":sub-track=-1")
+                    media.addOption(":sub-track-id=-1")
                 }
                 // Multichannel soundtracks (AC-3, E-AC-3, DTS, TrueHD) are decoded in software and
                 // must be folded into the stereo track this device actually plays. Some 5.1 mixes

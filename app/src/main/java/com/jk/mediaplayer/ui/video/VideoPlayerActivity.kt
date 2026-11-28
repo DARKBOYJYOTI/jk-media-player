@@ -502,7 +502,14 @@ class VideoPlayerActivity : ComponentActivity() {
                         libVlcController.syncVideoSurfaceBounds()
                         libVlcController.refreshPausedFrame()
                     }
-                }, 260L)
+                }, 250L)
+                window.decorView.postDelayed({
+                    if (!isFinishing && !isDestroyed && !isInPipMode) {
+                        hideSystemUI()
+                        libVlcController.syncVideoSurfaceBounds()
+                        libVlcController.refreshPausedFrame()
+                    }
+                }, 500L)
             }
         }
     }
@@ -1622,6 +1629,20 @@ fun GestureVideoPlayerScreen(
     var playbackSpeed by remember { mutableFloatStateOf(controller.getSpeed()) }
     var subtitleTracks by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
     var currentSubtitleTrack by remember { mutableIntStateOf(-1) }
+    var pendingSubtitleTrackId by remember { mutableIntStateOf(-1) }
+    val fontCacheState by com.jk.mediaplayer.player.SubtitleFontCacheManager.state.collectAsState()
+    LaunchedEffect(Unit) {
+        com.jk.mediaplayer.player.SubtitleFontCacheManager.ensureReady(context)
+    }
+    LaunchedEffect(fontCacheState, pendingSubtitleTrackId) {
+        if (fontCacheState == com.jk.mediaplayer.player.SubtitleFontCacheManager.State.READY && pendingSubtitleTrackId >= 0) {
+            val targetId = pendingSubtitleTrackId
+            pendingSubtitleTrackId = -1
+            controller.setSubtitleTrack(targetId)
+            currentSubtitleTrack = targetId
+            com.jk.mediaplayer.ui.common.AppToast.show("Subtitle fonts ready")
+        }
+    }
     var audioTracks by remember { mutableStateOf<List<Pair<Int, String>>>(emptyList()) }
     var currentAudioTrack by remember { mutableIntStateOf(-1) }
 
@@ -1884,7 +1905,7 @@ fun GestureVideoPlayerScreen(
                         }
                     }
 
-                    post {
+                    val startPlaybackOnce = {
                         val act = ctx as? VideoPlayerActivity
                         if (act?.hasInitiatedPlayback != true) {
                             act?.hasInitiatedPlayback = true
@@ -1900,6 +1921,28 @@ fun GestureVideoPlayerScreen(
                                 controller.reportError(msg)
                             }
                         }
+                    }
+
+                    // Wait for the SurfaceView's native Surface to be created before starting
+                    // playback so MediaCodec binds immediately and audio never races ahead of video.
+                    val surfaceView = findViewById<android.view.SurfaceView>(org.videolan.R.id.surface_video)
+                    val holder = surfaceView?.holder
+                    if (holder != null && holder.surface?.isValid != true) {
+                        val callback = object : android.view.SurfaceHolder.Callback {
+                            override fun surfaceCreated(h: android.view.SurfaceHolder) {
+                                h.removeCallback(this)
+                                post { startPlaybackOnce() }
+                            }
+                            override fun surfaceChanged(h: android.view.SurfaceHolder, format: Int, width: Int, height: Int) {}
+                            override fun surfaceDestroyed(h: android.view.SurfaceHolder) {}
+                        }
+                        holder.addCallback(callback)
+                        postDelayed({
+                            holder.removeCallback(callback)
+                            startPlaybackOnce()
+                        }, 250L)
+                    } else {
+                        post { startPlaybackOnce() }
                     }
                 }
             },
@@ -2553,6 +2596,39 @@ fun GestureVideoPlayerScreen(
                         contentDescription = null,
                         tint = Color.White,
                         modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
+        }
+
+        // Non-blocking MX Player-style banner while one-time subtitle font caching finishes in the background
+        if (!isInPip &&
+            pendingSubtitleTrackId >= 0 &&
+            fontCacheState == com.jk.mediaplayer.player.SubtitleFontCacheManager.State.CACHING
+        ) {
+            Surface(
+                shape = RoundedCornerShape(18.dp),
+                color = Color.Black.copy(alpha = 0.82f),
+                border = BorderStroke(1.dp, VideoIndigo.copy(alpha = 0.75f)),
+                modifier = Modifier
+                    .align(Alignment.TopCenter)
+                    .padding(top = 56.dp)
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)
+                ) {
+                    CircularProgressIndicator(
+                        color = VideoIndigo,
+                        strokeWidth = 2.dp,
+                        modifier = Modifier.size(16.dp)
+                    )
+                    Spacer(modifier = Modifier.width(10.dp))
+                    Text(
+                        text = "Caching subtitle fonts in background...",
+                        color = Color.White,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Medium
                     )
                 }
             }
@@ -3373,58 +3449,59 @@ fun GestureVideoPlayerScreen(
                                 }
                             } else {
                                 item {
+                                    val disableSubtitles = {
+                                        pendingSubtitleTrackId = -1
+                                        controller.setSubtitleTrack(-1)
+                                        currentSubtitleTrack = -1
+                                        showSubtitleSheet = false
+                                    }
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(8.dp))
-                                            .clickable {
-                                                controller.setSubtitleTrack(-1)
-                                                currentSubtitleTrack = -1
-                                                showSubtitleSheet = false
-                                            }
+                                            .clickable { disableSubtitles() }
                                             .padding(vertical = 8.dp, horizontal = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         RadioButton(
-                                            selected = (currentSubtitleTrack == -1),
-                                            onClick = {
-                                                controller.setSubtitleTrack(-1)
-                                                currentSubtitleTrack = -1
-                                                showSubtitleSheet = false
-                                            },
+                                            selected = (currentSubtitleTrack == -1 && pendingSubtitleTrackId == -1),
+                                            onClick = { disableSubtitles() },
                                             colors = RadioButtonDefaults.colors(selectedColor = VideoIndigo, unselectedColor = Color.White.copy(alpha = 0.5f))
                                         )
                                         Spacer(modifier = Modifier.width(10.dp))
                                         Text(
                                             text = "Disable Subtitles",
-                                            color = if (currentSubtitleTrack == -1) VideoIndigo else Color.White,
+                                            color = if (currentSubtitleTrack == -1 && pendingSubtitleTrackId == -1) VideoIndigo else Color.White,
                                             fontSize = 17.sp,
-                                            fontWeight = if (currentSubtitleTrack == -1) FontWeight.Bold else FontWeight.Normal
+                                            fontWeight = if (currentSubtitleTrack == -1 && pendingSubtitleTrackId == -1) FontWeight.Bold else FontWeight.Normal
                                         )
                                     }
                                 }
 
                                 items(validSubtitleTracks) { track ->
-                                    val isSelected = currentSubtitleTrack == track.first
+                                    val isSelected = currentSubtitleTrack == track.first || pendingSubtitleTrackId == track.first
+                                    val selectTrack = {
+                                        if (fontCacheState == com.jk.mediaplayer.player.SubtitleFontCacheManager.State.CACHING) {
+                                            pendingSubtitleTrackId = track.first
+                                            com.jk.mediaplayer.ui.common.AppToast.show("Caching subtitle fonts in background...")
+                                        } else {
+                                            pendingSubtitleTrackId = -1
+                                            controller.setSubtitleTrack(track.first)
+                                            currentSubtitleTrack = track.first
+                                        }
+                                        showSubtitleSheet = false
+                                    }
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
                                             .clip(RoundedCornerShape(8.dp))
-                                            .clickable {
-                                                controller.setSubtitleTrack(track.first)
-                                                currentSubtitleTrack = track.first
-                                                showSubtitleSheet = false
-                                            }
+                                            .clickable { selectTrack() }
                                             .padding(vertical = 8.dp, horizontal = 4.dp),
                                         verticalAlignment = Alignment.CenterVertically
                                     ) {
                                         RadioButton(
                                             selected = isSelected,
-                                            onClick = {
-                                                controller.setSubtitleTrack(track.first)
-                                                currentSubtitleTrack = track.first
-                                                showSubtitleSheet = false
-                                            },
+                                            onClick = { selectTrack() },
                                             colors = RadioButtonDefaults.colors(selectedColor = VideoIndigo, unselectedColor = Color.White.copy(alpha = 0.5f))
                                         )
                                         Spacer(modifier = Modifier.width(10.dp))
