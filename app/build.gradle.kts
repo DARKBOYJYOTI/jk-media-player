@@ -17,7 +17,7 @@ val hasReleaseSigning = !releaseStoreFile.isNullOrBlank() &&
 
 android {
     namespace = "com.jk.mediaplayer"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.jk.mediaplayer"
