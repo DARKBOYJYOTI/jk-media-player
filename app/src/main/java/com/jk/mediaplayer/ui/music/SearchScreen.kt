@@ -3,8 +3,10 @@ package com.jk.mediaplayer.ui.music
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.*
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -28,8 +30,10 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.luminance
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
@@ -749,6 +753,7 @@ fun SearchScreen(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 fun SearchTrackRow(
     track: AudioItem,
@@ -766,6 +771,8 @@ fun SearchTrackRow(
     onBlacklistTrack: (AudioItem) -> Unit = {}
 ) {
     val context = androidx.compose.ui.platform.LocalContext.current
+    val haptics = LocalHapticFeedback.current
+    val keyboardController = LocalSoftwareKeyboardController.current
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val textColorPrimary = if (isDark) Color.White else LightTextPrimary
     val textColorSecondary = if (isDark) Color.White.copy(alpha = 0.55f) else LightTextSecondary
@@ -774,7 +781,14 @@ fun SearchTrackRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = {
+                    haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                    keyboardController?.hide()
+                    showMenu = true
+                }
+            )
             .padding(horizontal = 20.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {

@@ -369,6 +369,109 @@ fun MusicScreen(
     val pullRefreshState = rememberPullToRefreshState()
     val pullRefreshScope = rememberCoroutineScope()
 
+    // Hoist computed Home shelves above AnimatedContent so returning from an Album, Artist,
+    // Playlist, or Folder has every section ready on frame 1 and preserves homeListState's
+    // exact scroll offset instead of clamping back to the top.
+    var homeShelves by remember { mutableStateOf(HomeShelvesState()) }
+    LaunchedEffect(tracks, albums, artists, playlistVersion, refreshSeed) {
+        withContext(Dispatchers.Default) {
+            val favIds = prefsManager.getFavorites()
+            val computedLiked = tracks.filter { favIds.contains(it.id.toString()) }
+            val trackMap = tracks.associateBy { it.id }
+            val allTrackIds = tracks.map { it.id }
+            val recentlyPlayedIds = prefsManager.getRecentlyPlayedTrackIds()
+            val computedRecentlyPlayed = recentlyPlayedIds.mapNotNull { trackMap[it] }
+            val mostPlayedIds = prefsManager.getMostPlayedTrackIds(allTrackIds)
+            val computedMostPlayed = mostPlayedIds.mapNotNull { trackMap[it] }
+
+            val computedRecentAlbums = albums.filter { it.tracks.isNotEmpty() }
+                .map { album -> album to (album.tracks.maxOfOrNull { it.dateAdded } ?: 0L) }
+                .sortedByDescending { it.second }
+                .map { it.first }
+                .take(12)
+
+            val computedRecentArtists = artists.filter { it.tracks.isNotEmpty() }
+                .map { artist -> artist to (artist.tracks.maxOfOrNull { it.dateAdded } ?: 0L) }
+                .sortedByDescending { it.second }
+                .map { it.first }
+                .take(12)
+
+            val computedTopAlbums = albums.filter { it.tracks.isNotEmpty() }
+                .sortedByDescending { it.tracks.size }
+                .take(12)
+
+            val computedTopArtists = artists.filter { it.tracks.isNotEmpty() }
+                .sortedByDescending { it.tracks.size }
+                .take(12)
+
+            // Quick picks ranking balancing familiarity and discovery without letting one artist dominate.
+            val computedQuickPicks = if (tracks.isEmpty()) {
+                emptyList()
+            } else {
+                val allPlayCounts = prefsManager.getAllTrackPlayCounts()
+                val playByTrack = tracks.associate { it.id to (allPlayCounts[it.id] ?: 0) }
+                val maxPlay = playByTrack.values.maxOrNull()?.coerceAtLeast(1) ?: 1
+                val artistPlays = HashMap<String, Int>()
+                tracks.forEach { track ->
+                    artistPlays[track.artist] = (artistPlays[track.artist] ?: 0) + (playByTrack[track.id] ?: 0)
+                }
+                val maxArtistPlay = artistPlays.values.maxOrNull()?.coerceAtLeast(1) ?: 1
+                val newest = tracks.maxOf { it.dateAdded }
+                val oldest = tracks.minOf { it.dateAdded }
+                val dateSpan = (newest - oldest).coerceAtLeast(1L)
+                val recentIds = recentlyPlayedIds.take(8).toSet()
+
+                fun scoreOf(track: AudioItem): Float {
+                    val plays = playByTrack[track.id] ?: 0
+                    val favourite = favIds.contains(track.id.toString())
+                    val familiarity = (if (favourite) 0.6f else 0f) + 0.4f * (plays.toFloat() / maxPlay)
+                    val recency = ((track.dateAdded - oldest).toFloat() / dateSpan).coerceIn(0f, 1f)
+                    val affinity = (artistPlays[track.artist] ?: 0).toFloat() / maxArtistPlay
+                    val discovery = if (plays == 0) 1f else 0f
+                    return 0.45f * familiarity + 0.25f * recency + 0.20f * affinity + 0.10f * discovery
+                }
+
+                val scored = tracks.associateWith { scoreOf(it) }
+                val rnd = java.util.Random(refreshSeed.toLong())
+                val pool = tracks.filterNot { it.id in recentIds }.ifEmpty { tracks }
+                val ranked = pool.sortedByDescending { scored[it] ?: 0f }
+                val hook = ranked.firstOrNull()
+                val familiarPool = ranked.drop(1).take(16).shuffled(rnd)
+                val discoveryPool = ranked.drop(1)
+                    .filter { (playByTrack[it.id] ?: 0) == 0 }
+                    .shuffled(rnd)
+
+                val result = ArrayList<AudioItem>(20)
+                fun push(track: AudioItem, perArtistLimit: Int) {
+                    if (result.size >= 20) return
+                    if (result.any { it.id == track.id }) return
+                    if (result.count { it.artist == track.artist } >= perArtistLimit) return
+                    result.add(track)
+                }
+                hook?.let { push(it, 2) }
+                familiarPool.forEach { if (result.size < 8) push(it, 2) }
+                discoveryPool.forEach { if (result.size < 15) push(it, 1) }
+                familiarPool.forEach { if (result.size < 20) push(it, 2) }
+                ranked.forEach { if (result.size < 20) push(it, 3) }
+                tracks.filterNot { it.id in recentIds }.forEach { if (result.size < 20) push(it, 3) }
+                result.take(20)
+            }
+
+            withContext(Dispatchers.Main) {
+                homeShelves = HomeShelvesState(
+                    likedTracks = computedLiked,
+                    recentlyPlayedTracks = computedRecentlyPlayed,
+                    mostPlayedTracks = computedMostPlayed,
+                    recentlyAddedAlbums = computedRecentAlbums,
+                    recentlyAddedArtists = computedRecentArtists,
+                    topAlbums = computedTopAlbums,
+                    topArtists = computedTopArtists,
+                    quickPickTracks = computedQuickPicks
+                )
+            }
+        }
+    }
+
     // The footer nav bar is already removed from the content area by the Scaffold insets, so the
     // lists only need room for the floating mini player. Reserving ~120dp unconditionally left a
     // visible empty band under the last row whenever no mini player was showing.
@@ -878,6 +981,7 @@ fun MusicScreen(
                                     albums = albums,
                                     artists = artists,
                                     folders = folders,
+                                    shelves = homeShelves,
                                     currentTrack = currentTrack,
                                     isPlaying = isPlaying,
                                     listState = homeListState,
@@ -1187,6 +1291,17 @@ private fun HomeSectionHeader(
 /**
  * Home Screen (Pure AMOLED Black, Quick Picks, Speed Dial, Artists, Folders)
  */
+data class HomeShelvesState(
+    val likedTracks: List<AudioItem> = emptyList(),
+    val recentlyPlayedTracks: List<AudioItem> = emptyList(),
+    val mostPlayedTracks: List<AudioItem> = emptyList(),
+    val recentlyAddedAlbums: List<AlbumItem> = emptyList(),
+    val recentlyAddedArtists: List<ArtistItem> = emptyList(),
+    val topAlbums: List<AlbumItem> = emptyList(),
+    val topArtists: List<ArtistItem> = emptyList(),
+    val quickPickTracks: List<AudioItem> = emptyList()
+)
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun HomeSectionView(
@@ -1196,6 +1311,7 @@ fun HomeSectionView(
     albums: List<AlbumItem>,
     artists: List<ArtistItem>,
     folders: List<AudioFolder>,
+    shelves: HomeShelvesState = HomeShelvesState(),
     currentTrack: AudioItem?,
     isPlaying: Boolean = false,
     listState: LazyListState = rememberLazyListState(),
@@ -1220,11 +1336,6 @@ fun HomeSectionView(
     val isDark = MaterialTheme.colorScheme.background.luminance() < 0.5f
     val textColorPrimary = if (isDark) Color.White else LightTextPrimary
     val textColorSecondary = if (isDark) Color(0xFFAAAAAA) else LightTextSecondary
-    val prefsManager = remember { com.jk.mediaplayer.data.PreferencesManager(context) }
-    val isNetworkStreamIconEnabled = remember(com.jk.mediaplayer.data.PreferencesManager.settingsVersion) {
-        prefsManager.isNetworkStreamIconEnabled()
-    }
-    val playlistVersion = com.jk.mediaplayer.data.PreferencesManager.playlistVersion
 
     val configuration = LocalConfiguration.current
     val density = androidx.compose.ui.platform.LocalDensity.current
@@ -1237,113 +1348,14 @@ fun HomeSectionView(
         (cardWidth + captionHeight) * 2 + 14.dp + 4.dp
     }
 
-    var likedTracks by remember { mutableStateOf<List<AudioItem>>(emptyList()) }
-    var recentlyPlayedTracks by remember { mutableStateOf<List<AudioItem>>(emptyList()) }
-    var mostPlayedTracks by remember { mutableStateOf<List<AudioItem>>(emptyList()) }
-    var recentlyAddedAlbums by remember { mutableStateOf<List<AlbumItem>>(emptyList()) }
-    var recentlyAddedArtists by remember { mutableStateOf<List<ArtistItem>>(emptyList()) }
-    var topAlbums by remember { mutableStateOf<List<AlbumItem>>(emptyList()) }
-    var topArtists by remember { mutableStateOf<List<ArtistItem>>(emptyList()) }
-    var quickPickTracks by remember { mutableStateOf<List<AudioItem>>(emptyList()) }
-
-    // Compute all ranked and sorted Home shelves off the UI thread so first launch and
-    // background library scans never stall 120 Hz vertical scrolling.
-    LaunchedEffect(tracks, albums, artists, playlistVersion, refreshSeed) {
-        withContext(Dispatchers.Default) {
-            val favoriteIds = prefsManager.getFavorites()
-            val computedLiked = tracks.filter { favoriteIds.contains(it.id.toString()) }
-            val trackMap = tracks.associateBy { it.id }
-            val allTrackIds = tracks.map { it.id }
-            val recentlyPlayedIds = prefsManager.getRecentlyPlayedTrackIds()
-            val computedRecentlyPlayed = recentlyPlayedIds.mapNotNull { trackMap[it] }
-            val mostPlayedIds = prefsManager.getMostPlayedTrackIds(allTrackIds)
-            val computedMostPlayed = mostPlayedIds.mapNotNull { trackMap[it] }
-
-            val computedRecentAlbums = albums.filter { it.tracks.isNotEmpty() }
-                .map { album -> album to (album.tracks.maxOfOrNull { it.dateAdded } ?: 0L) }
-                .sortedByDescending { it.second }
-                .map { it.first }
-                .take(12)
-
-            val computedRecentArtists = artists.filter { it.tracks.isNotEmpty() }
-                .map { artist -> artist to (artist.tracks.maxOfOrNull { it.dateAdded } ?: 0L) }
-                .sortedByDescending { it.second }
-                .map { it.first }
-                .take(12)
-
-            val computedTopAlbums = albums.filter { it.tracks.isNotEmpty() }
-                .sortedByDescending { it.tracks.size }
-                .take(12)
-
-            val computedTopArtists = artists.filter { it.tracks.isNotEmpty() }
-                .sortedByDescending { it.tracks.size }
-                .take(12)
-
-            // Quick picks ranking balancing familiarity and discovery without letting one artist dominate.
-            val computedQuickPicks = if (tracks.isEmpty()) {
-                emptyList()
-            } else {
-                val allPlayCounts = prefsManager.getAllTrackPlayCounts()
-                val playByTrack = tracks.associate { it.id to (allPlayCounts[it.id] ?: 0) }
-                val maxPlay = playByTrack.values.maxOrNull()?.coerceAtLeast(1) ?: 1
-                val artistPlays = HashMap<String, Int>()
-                tracks.forEach { track ->
-                    artistPlays[track.artist] = (artistPlays[track.artist] ?: 0) + (playByTrack[track.id] ?: 0)
-                }
-                val maxArtistPlay = artistPlays.values.maxOrNull()?.coerceAtLeast(1) ?: 1
-                val newest = tracks.maxOf { it.dateAdded }
-                val oldest = tracks.minOf { it.dateAdded }
-                val dateSpan = (newest - oldest).coerceAtLeast(1L)
-                val recentIds = recentlyPlayedIds.take(8).toSet()
-
-                fun scoreOf(track: AudioItem): Float {
-                    val plays = playByTrack[track.id] ?: 0
-                    val favourite = favoriteIds.contains(track.id.toString())
-                    val familiarity = (if (favourite) 0.6f else 0f) + 0.4f * (plays.toFloat() / maxPlay)
-                    val recency = ((track.dateAdded - oldest).toFloat() / dateSpan).coerceIn(0f, 1f)
-                    val affinity = (artistPlays[track.artist] ?: 0).toFloat() / maxArtistPlay
-                    val discovery = if (plays == 0) 1f else 0f
-                    return 0.45f * familiarity + 0.25f * recency + 0.20f * affinity + 0.10f * discovery
-                }
-
-                val scored = tracks.associateWith { scoreOf(it) }
-                val rnd = java.util.Random(refreshSeed.toLong())
-                val pool = tracks.filterNot { it.id in recentIds }.ifEmpty { tracks }
-                val ranked = pool.sortedByDescending { scored[it] ?: 0f }
-                val hook = ranked.firstOrNull()
-                val familiarPool = ranked.drop(1).take(16).shuffled(rnd)
-                val discoveryPool = ranked.drop(1)
-                    .filter { (playByTrack[it.id] ?: 0) == 0 }
-                    .shuffled(rnd)
-
-                val result = ArrayList<AudioItem>(20)
-                fun push(track: AudioItem, perArtistLimit: Int) {
-                    if (result.size >= 20) return
-                    if (result.any { it.id == track.id }) return
-                    if (result.count { it.artist == track.artist } >= perArtistLimit) return
-                    result.add(track)
-                }
-                hook?.let { push(it, 2) }
-                familiarPool.forEach { if (result.size < 8) push(it, 2) }
-                discoveryPool.forEach { if (result.size < 15) push(it, 1) }
-                familiarPool.forEach { if (result.size < 20) push(it, 2) }
-                ranked.forEach { if (result.size < 20) push(it, 3) }
-                tracks.filterNot { it.id in recentIds }.forEach { if (result.size < 20) push(it, 3) }
-                result.take(20)
-            }
-
-            withContext(Dispatchers.Main) {
-                likedTracks = computedLiked
-                recentlyPlayedTracks = computedRecentlyPlayed
-                mostPlayedTracks = computedMostPlayed
-                recentlyAddedAlbums = computedRecentAlbums
-                recentlyAddedArtists = computedRecentArtists
-                topAlbums = computedTopAlbums
-                topArtists = computedTopArtists
-                quickPickTracks = computedQuickPicks
-            }
-        }
-    }
+    val likedTracks = shelves.likedTracks
+    val recentlyPlayedTracks = shelves.recentlyPlayedTracks
+    val mostPlayedTracks = shelves.mostPlayedTracks
+    val recentlyAddedAlbums = shelves.recentlyAddedAlbums
+    val recentlyAddedArtists = shelves.recentlyAddedArtists
+    val topAlbums = shelves.topAlbums
+    val topArtists = shelves.topArtists
+    val quickPickTracks = shelves.quickPickTracks
 
     val recentlyAddedAlbumsChunks = remember(recentlyAddedAlbums) { recentlyAddedAlbums.chunked(4) }
     val recentlyAddedAlbumsPagerState = rememberPagerState(pageCount = { recentlyAddedAlbumsChunks.size })
@@ -1504,15 +1516,20 @@ fun HomeSectionView(
 
             // Quick picks: one mix per swipe (snapping pager), each mix plays only its own songs
             item(key = "home_quick_picks_pager", contentType = "home_quick_picks_pager") {
+                val quickPickMaxRows = remember(quickPickChunks) {
+                    (quickPickChunks.maxOfOrNull { it.size } ?: 1).coerceIn(1, 4)
+                }
+                val quickPickPagerHeight = (quickPickMaxRows * 64 + 2).dp
                 HorizontalPager(
                     state = quickPickPagerState,
                     beyondViewportPageCount = 0,
+                    verticalAlignment = Alignment.Top,
                     contentPadding = PaddingValues(horizontal = 20.dp),
                     pageSpacing = 16.dp,
                     key = { pageIndex -> "quickpick_$pageIndex" },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(258.dp)
+                        .height(quickPickPagerHeight)
                 ) { pageIndex ->
                     val chunk = quickPickChunks.getOrNull(pageIndex).orEmpty()
                     // Lightweight page instead of a bordered card: fewer layers to compose and
